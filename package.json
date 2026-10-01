@@ -3,7 +3,6 @@
   "private": true,
   "workspaces": {
     "packages": [
-      "apps/*",
       "packages/*"
     ],
     "catalog": {
@@ -25,7 +24,6 @@
     "check-types": "nx run-many -t check-types",
     "test": "nx run-many -t test",
     "graph": "nx graph",
-    "dev:backend": "nx dev backend",
     "dev:banking": "nx dev banking",
     "dev:native": "nx run-many -t dev --projects=native",
     "dev:web": "nx run-many -t dev --projects=web",
@@ -33,8 +31,6 @@
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/native/",
-    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/native/",
     "check": "ultracite check apps packages *.json *.jsonc *.ts",
     "fix": "ultracite fix apps packages *.json *.jsonc *.ts"
   },

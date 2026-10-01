@@ -22,8 +22,12 @@
       "inputs": [
         "production",
         "^production",
-        { "runtime": "node --version" },
-        { "runtime": "bun --version" }
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "bun --version"
+        }
       ]
     },
     "check-types": {
@@ -39,5 +43,6 @@
       "cache": false,
       "continuous": true
     }
-  }
+  },
+  "analytics": true
 }
