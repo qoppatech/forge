@@ -2,7 +2,7 @@
 
 **Banking infrastructure. Onchain.**
 
-Open source developer sandbox for traditional-bank workflows on Solana. On-chain functionality implements vault creation/funding and the **milestone 2 loan lifecycle**. The Bun/Nx workspace also contains application starters, two health-only services and an IDL-only SDK foundation. It is not a banking service, audited protocol, or production-ready custody system.
+Open source developer sandbox for traditional-bank workflows on Solana. On-chain functionality implements vault creation/funding and the **milestone 2 loan lifecycle**. The Bun/Nx workspace also contains a health-only Go service and an IDL-only SDK foundation. It is not a banking service, audited protocol, or production-ready custody system.
 
 ## Implemented boundary
 
@@ -18,16 +18,12 @@ Loan terms are fixed at proposal, require two distinct approver approvals, and c
 
 | Path | Nx project | Current scope |
 | --- | --- | --- |
-| `apps/web` | `web` | Next.js dashboard starter, port 3001; Docker configuration. |
-| `apps/native` | `native` | Expo + Uniwind starter; Metro on port 8081. |
-| `apps/backend` | `backend` | Bun/TypeScript service; `GET /health` on `127.0.0.1:3000`. |
 | `services/banking` | `banking` | Go standard-library service; `GET /health` on `127.0.0.1:3002`. |
 | `packages/sdk` | `@forge/sdk` | Public IDL, generated `Forge` type and `FORGE_PROGRAM_ID`; no transaction builders. |
 | `programs/forge` | `onchain` | Existing Rust/Anchor vault program, unchanged. |
-| `packages/ui` | `@forge/ui` | Generated shared web UI components. |
 | `packages/config` | `@forge/config` | Shared TypeScript configuration. |
 
-These workspace choices supersede the proposed Vite/single-service layout in the earlier MVP specification; financial milestones and deployment gates remain unchanged. Frontends are scaffold screens, not working banking dashboards. Services have no financial endpoints, persistence, authentication, payments, keys or bank integration. Health reports process liveness only.
+These workspace choices supersede the proposed Vite/single-service layout in the earlier MVP specification; financial milestones and deployment gates remain unchanged. The banking service has no financial endpoints, persistence, authentication, payments, keys or bank integration. Health reports process liveness only.
 
 ```sh
 nix-shell
@@ -38,31 +34,17 @@ bun run check
 npx nx graph
 ```
 
-Use `--parallel=1` on build/check commands on memory-constrained machines. Six projects have build targets; UI is compiled by Next.js and config has no build output. Expo's build exports iOS/Android JavaScript bundles and static web assets, **not signed IPA/APK binaries**. Device/simulator testing is separate. Native folder generation is an explicit `bun run --cwd apps/native native:generate` command, not a `prebuild` lifecycle hook.
+Use `--parallel=1` on build/check commands on memory-constrained machines. Three projects have build targets (`onchain`, `@forge/sdk`, `banking`); config has no build output.
 
 ```sh
-bun run dev:web
-bun run dev:native
-bun run dev:backend
 bun run dev:banking
-# Or start all four:
-bun run dev
 ```
 
-Backend accepts `HOST`/`PORT`; banking accepts `BANKING_ADDR`. Defaults bind both service shells to loopback. No frontend-to-service or Go-to-chain integration is claimed. Actual graph edges include `backend -> @forge/sdk -> onchain` and `web -> @forge/ui`; Go remains independent until an integration exists.
+Banking accepts `BANKING_ADDR` and binds to loopback by default. No Go-to-chain integration is claimed. Actual graph edges include `@forge/sdk -> onchain`; Go remains independent until an integration exists.
 
 SDK build depends on the Anchor build, copies only public IDL/types into ignored `packages/sdk/src/generated/`, and emits JavaScript, declarations and JSON under `dist/`. Never edit or commit those generated copies. Nx caches public program outputs, not generated keypairs; Nx Cloud is disabled.
 
-The scaffold came from Better-T-Stack **3.44.0**, generated in `.cache/` and integrated without replacing existing Git/Cargo files. `bts.jsonc` records generator choices, not the separately added backend/Go services. `bun.lock` locks dependencies. Requested addons are configured: Nx, Oxlint/Ultracite, project-local MCP (`.mcp.json`: Nx and Next DevTools), and local React/Expo skills (`.agents/skills`, `skills-lock.json`). MCP configuration is not an automatically running server. No global agent settings were changed.
-
-Web image build, without starting or deploying a container:
-
-```sh
-docker compose config --quiet
-docker compose build web
-```
-
-No `.env` file is required for this scaffold. `.env.schema` files are tracked; value files are ignored. Docker context excludes local tools, caches, Rust outputs and keypairs. Docker runtime and mobile device behavior still require separate validation.
+The scaffold came from Better-T-Stack **3.44.0**, generated in `.cache/` and integrated without replacing existing Git/Cargo files. `bts.jsonc` records generator choices, not the separately added Go service; the generated web/native starters and shared UI package have since been removed. `bun.lock` locks dependencies. Requested addons are configured: Nx, Oxlint/Ultracite, project-local MCP (`.mcp.json`: Nx and Next DevTools), and local React/Expo skills (`.agents/skills`, `skills-lock.json`). MCP configuration is not an automatically running server. No global agent settings were changed.
 
 Static graph export:
 

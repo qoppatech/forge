@@ -10,21 +10,6 @@ export default defineConfig({
     "**/src/generated/**",
     "**/src/env.ts",
   ],
-  overrides: [
-    {
-      files: ["apps/native/*.config.js"],
-      rules: { "node/global-require": "off", "unicorn/prefer-module": "off" },
-    },
-    {
-      files: ["apps/native/**/*.tsx"],
-      rules: {
-        "react/no-unstable-nested-components": [
-          "error",
-          { allowAsProps: true },
-        ],
-      },
-    },
-  ],
   // Preserve the generators' named functions alongside arrow components.
   rules: {
     "func-style": ["error", "declaration", { allowArrowFunctions: true }],
