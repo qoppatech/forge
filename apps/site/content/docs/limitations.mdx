@@ -1,0 +1,31 @@
+---
+title: Limitations
+description: Trust and operational limits of the FORGE sandbox.
+---
+
+FORGE is a local prototype. These limits apply to everything in the repository today.
+
+## Assets and keys
+
+- `FORGE_TEST_USD` is a fixture label. It is not redeemable currency, a certified security or a transferable loan instrument.
+- Fixtures generate independent demonstration wallets and hold them only in memory. No real bank or customer data is needed.
+- The fixture treasury keeps mint authority and can issue more test tokens.
+
+## Program behavior
+
+- Creating a vault does not certify a bank.
+- Vault rules govern FORGE instructions, not every transfer of the underlying token.
+- Direct token donations increase vault cash. They do not count as repayment and do not change loan state.
+
+## Deployment
+
+- No program is deployed, and no upgrade authority has been established.
+- LiteSVM is not a local validator. Local-validator and Devnet deployment require a separate, explicitly approved step.
+- If the program is later deployed with the upgradeable loader, the deployment wallet keeps upgrade control unless it is explicitly changed.
+
+## Not yet built
+
+- Banking API, reconciler and statements
+- Operator and borrower interfaces
+- SDK transaction builders
+- Partial repayments, accrual and overdue handling

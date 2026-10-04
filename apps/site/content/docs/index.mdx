@@ -1,0 +1,48 @@
+---
+title: Introduction
+description: FORGE connects existing banking systems with programmable financial operations on Solana.
+---
+
+FORGE is a developer sandbox for traditional-bank workflows on Solana. Its first workflow is **bank-controlled lending**: a treasury funds a vault, two distinct approvers authorize each loan, and the borrower draws and repays against terms that were fixed at proposal.
+
+<Callout type="warn" title="Sandbox, not a banking service">
+  FORGE is a local prototype. It is not an audited protocol, a deployed program,
+  or a production custody system. Never fund it with assets of real value.
+</Callout>
+
+## What is implemented
+
+- One Anchor program with eight instructions: `create_vault`, `fund_vault`, `propose_loan`, `approve_loan`, `draw_loan`, `repay_loan`, `withdraw_available` and `set_disbursement_paused`.
+- A treasury-owned vault with two immutable approver keys, a fixed mint, per-loan and outstanding-principal limits, and a fixed treasury destination.
+- A fixed-payoff loan lifecycle: `Proposed → Approved → Active → Repaid`.
+- Tests that execute the compiled program in LiteSVM, including authorization, limit and account-substitution failures.
+- `@forge/sdk`, a workspace package that exports the program IDL, the generated `Forge` type and `FORGE_PROGRAM_ID`.
+
+## What is not implemented yet
+
+- Transaction builders in the SDK.
+- A banking API, reconciler, database or operator dashboard.
+- Deployment to a local validator or Devnet.
+
+<Cards>
+  <Card
+    title="Getting started"
+    href="/docs/getting-started"
+    description="Build the program and run the test suite."
+  />
+  <Card
+    title="Loan lifecycle"
+    href="/docs/loan-lifecycle"
+    description="States, signers and the rules each instruction enforces."
+  />
+  <Card
+    title="Accounts"
+    href="/docs/accounts"
+    description="Vault and loan accounts, fields and PDA seeds."
+  />
+  <Card
+    title="Limitations"
+    href="/docs/limitations"
+    description="Trust and operational limits of the sandbox."
+  />
+</Cards>
