@@ -1,0 +1,75 @@
+---
+title: Getting started
+description: Build the Anchor program and run the compiled-program tests without deploying anything.
+---
+
+The tested platform is Nix on x86_64 Linux. `flake.lock` pins Anchor 1.2.0, Solana CLI 4.0.3 and the host tools; `shell.nix` uses the same lock.
+
+<Callout type="info">
+  First setup needs network access and several GB of disk space. On NixOS, the
+  upstream platform-tools executables require `nix-ld`.
+</Callout>
+
+<Steps>
+<Step>
+
+### Enter the pinned shell
+
+```sh
+nix-shell
+bash scripts/check-nix-path.sh
+```
+
+</Step>
+<Step>
+
+### Bootstrap and build
+
+```sh
+bash scripts/bootstrap.sh
+bash scripts/build.sh
+```
+
+Bootstrap installs `cargo-build-sbf` 4.3.0 under the ignored `.tools/` directory. The build produces `target/deploy/forge.so`, `target/idl/forge.json` and `target/types/forge.ts`.
+
+</Step>
+<Step>
+
+### Run the tests
+
+```sh
+cargo test --locked -p forge
+cargo fmt --all -- --check
+cargo clippy --locked -p forge --all-targets -- -D warnings
+```
+
+The tests execute the compiled `target/deploy/forge.so` in LiteSVM. Rebuild after every program change.
+
+</Step>
+<Step>
+
+### Run the reproducible fixture
+
+```sh
+cargo test --locked -p forge --test vault create_and_fund_exact_test_token_balance -- --exact --nocapture
+```
+
+It creates in-memory treasury and approver wallets, issues the test supply, creates the vault and funds it. Expected balances: treasury `0`, vault `10000000000` base units (10,000 `FORGE_TEST_USD`).
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+  Do not use `anchor test` as a deployment-free command: it deploys
+  automatically.
+</Callout>
+
+## Workspace
+
+The Bun and Nx workspace builds the program, the SDK and the Go banking service together:
+
+```sh
+bun install --frozen-lockfile
+bunx nx run-many -t build
+bunx nx run-many -t check-types test
+```

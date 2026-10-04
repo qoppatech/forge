@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": {
     "packages": [
+      "apps/*",
       "packages/*"
     ],
     "catalog": {
@@ -18,8 +19,9 @@
     "test": "nx run-many -t test",
     "graph": "nx graph",
     "dev:banking": "nx dev banking",
-    "check": "ultracite check packages *.json *.jsonc *.ts",
-    "fix": "ultracite fix packages *.json *.jsonc *.ts"
+    "dev:site": "nx dev @forge/site",
+    "check": "ultracite check apps/site packages *.json *.jsonc *.ts",
+    "fix": "ultracite fix apps/site packages *.json *.jsonc *.ts"
   },
   "dependencies": {
     "zod": "catalog:"

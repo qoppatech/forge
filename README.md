@@ -19,6 +19,7 @@ Loan terms are fixed at proposal, require two distinct approver approvals, and c
 | Path | Nx project | Current scope |
 | --- | --- | --- |
 | `services/banking` | `banking` | Go standard-library service; `GET /health` on `127.0.0.1:3002`. |
+| `apps/site` | `@forge/site` | Landing page and Fumadocs documentation; static export to GitHub Pages. |
 | `packages/sdk` | `@forge/sdk` | Public IDL, generated `Forge` type and `FORGE_PROGRAM_ID`; no transaction builders. |
 | `programs/forge` | `onchain` | Existing Rust/Anchor vault program, unchanged. |
 | `packages/config` | `@forge/config` | Shared TypeScript configuration. |
@@ -38,6 +39,7 @@ Use `--parallel=1` on build/check commands on memory-constrained machines. Three
 
 ```sh
 bun run dev:banking
+bun run dev:site
 ```
 
 Banking accepts `BANKING_ADDR` and binds to loopback by default. No Go-to-chain integration is claimed. Actual graph edges include `@forge/sdk -> onchain`; Go remains independent until an integration exists.

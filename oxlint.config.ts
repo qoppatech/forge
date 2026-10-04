@@ -9,6 +9,10 @@ export default defineConfig({
     ...(core.ignorePatterns ?? []),
     "**/src/generated/**",
     "**/src/env.ts",
+    // Vendored shadcn registry components (shadcn, coss, Magic UI, Dice UI); keep upstream-diffable.
+    "apps/site/components/ui/**",
+    "apps/site/hooks/**",
+    "apps/site/lib/compose-refs.ts",
   ],
   // Preserve the generators' named functions alongside arrow components.
   rules: {

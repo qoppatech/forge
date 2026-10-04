@@ -1,0 +1,61 @@
+---
+title: Loan lifecycle
+description: How a loan moves from proposal to repayment, who signs each step, and what the program checks.
+---
+
+A loan moves through four states. Each instruction checks the current state before it runs, so a step cannot be skipped or repeated.
+
+```text
+Proposed ──(both approvals)──▶ Approved ──(draw)──▶ Active ──(repay)──▶ Repaid
+```
+
+## Instructions
+
+| Instruction | Signer | Effect |
+| --- | --- | --- |
+| `create_vault` | Treasury | Creates the vault with two approvers, a mint, limits and a treasury destination. |
+| `fund_vault` | Treasury | Transfers tokens from the treasury into the vault token account. |
+| `propose_loan` | One configured approver | Creates a loan with fixed principal, rate, term, expiry and borrower destination. |
+| `approve_loan` | Each configured approver | Records one approval. The second distinct approval moves the loan to `Approved`. |
+| `draw_loan` | Borrower | Transfers principal to the borrower destination and moves the loan to `Active`. |
+| `repay_loan` | Borrower | Transfers the fixed payoff into the vault and moves the loan to `Repaid`. |
+| `withdraw_available` | Both approvers | Transfers vault cash to the fixed treasury destination. |
+| `set_disbursement_paused` | Both approvers | Pauses or resumes new draws. Repayment stays available. |
+
+## Rules enforced by the program
+
+<Steps>
+<Step>
+
+### Proposal fixes the terms
+
+The principal must be positive and within the vault's per-loan limit. The term must be positive and the offer expiry in the future. Interest is computed once as `principal × term_rate_bps ÷ 10,000` (rounded down) and stored with the fixed payoff. It is never recomputed.
+
+</Step>
+<Step>
+
+### Two distinct approvals
+
+Only the vault's two configured approvers can approve, and each can approve once. The loan becomes `Approved` only when both have approved.
+
+</Step>
+<Step>
+
+### Draw is gated
+
+A draw requires an `Approved` loan, an unpaused vault, an unexpired offer, enough vault liquidity, and outstanding principal that stays within the vault's limit. Only the named borrower can draw, and only to their own token account.
+
+</Step>
+<Step>
+
+### Repayment is fixed
+
+The borrower repays the fixed payoff in one transfer. The loan's principal is removed from the vault's outstanding total.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  The rate is a fixed rate for the whole term, not an annual rate. The program
+  does not track overdue status, partial repayments or accrual.
+</Callout>
