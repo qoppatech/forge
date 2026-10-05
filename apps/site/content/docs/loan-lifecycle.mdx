@@ -19,8 +19,9 @@ Proposed ──(both approvals)──▶ Approved ──(draw)──▶ Active �
 | `approve_loan` | Each configured approver | Records one approval. The second distinct approval moves the loan to `Approved`. |
 | `draw_loan` | Borrower | Transfers principal to the borrower destination and moves the loan to `Active`. |
 | `repay_loan` | Borrower | Transfers the fixed payoff into the vault and moves the loan to `Repaid`. |
-| `withdraw_available` | Both approvers | Transfers vault cash to the fixed treasury destination. |
-| `set_disbursement_paused` | Both approvers | Pauses or resumes new draws. Repayment stays available. |
+| `propose_withdrawal` | One configured approver | Records a withdrawal amount under a caller-chosen `withdrawal_id`; counts as that approver's approval. |
+| `approve_withdrawal` | The other approver | Transfers the amount to the fixed treasury destination and marks the withdrawal executed. |
+| `set_disbursement_paused` | Both approvers | Pauses or resumes new draws. Must quote the vault's current `pause_seq`. Repayment stays available. |
 
 ## Rules enforced by the program
 
@@ -53,9 +54,17 @@ A draw requires an `Approved` loan, an unpaused vault, an unexpired offer, enoug
 The borrower repays the fixed payoff in one transfer. The loan's principal is removed from the vault's outstanding total.
 
 </Step>
+<Step>
+
+### Withdrawals and pause are replay-safe
+
+A withdrawal moves funds once: replaying its proposal fails because the PDA already exists, and replaying an approval fails with `InvalidWithdrawalState`. Each approver signs their own transaction. A pause change must quote `pause_seq`, which increments on every change, so a stale request cannot undo a newer pause (`StalePauseSequence`).
+
+</Step>
 </Steps>
 
 <Callout type="info">
   The rate is a fixed rate for the whole term, not an annual rate. The program
-  does not track overdue status, partial repayments or accrual.
+  does not track overdue status, partial repayments or accrual; the API computes
+  expired and overdue views.
 </Callout>

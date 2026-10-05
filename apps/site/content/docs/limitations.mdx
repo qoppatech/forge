@@ -19,13 +19,13 @@ FORGE is a local prototype. These limits apply to everything in the repository t
 
 ## Deployment
 
-- No program is deployed, and no upgrade authority has been established.
-- LiteSVM is not a local validator. Local-validator and Devnet deployment require a separate, explicitly approved step.
+- The program is only loaded at genesis of a disposable loopback `solana-test-validator`; there is no Devnet or mainnet deployment and no upgrade authority.
+- LiteSVM is not a local validator. Program tests use LiteSVM; the service flow is validated on the loopback validator.
 - If the program is later deployed with the upgradeable loader, the deployment wallet keeps upgrade control unless it is explicitly changed.
 
 ## Not yet built
 
-- Banking API, reconciler and statements
-- Operator and borrower interfaces
-- SDK transaction builders
-- Partial repayments, accrual and overdue handling
+- Production custody (HSM/MPC) integration and wallet-adapter signing; the console signs with browser-held demo keys
+- Bank-core integration beyond signed webhooks
+- Program events, receipts for treasury funding, approver rotation and withdrawal cancellation
+- Partial repayments and accrual

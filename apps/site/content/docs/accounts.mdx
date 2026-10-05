@@ -12,8 +12,9 @@ Amounts are stored in the mint's base units. The test mint uses six decimals, so
 | Vault | `["vault", treasury, vault_id]` | FORGE program |
 | Vault token account | `["tokens", vault]` | Owned by SPL Token; the vault PDA is its transfer authority |
 | Loan | `["loan", vault, loan_id]` | FORGE program |
+| Withdrawal | `["withdrawal", vault, withdrawal_id]` | FORGE program |
 
-`vault_id` and `loan_id` are 32-byte identifiers chosen by the caller.
+`vault_id`, `loan_id` and `withdrawal_id` are 32-byte identifiers chosen by the caller. The SDK derives them from business references, so a retried request targets the same account.
 
 ## Vault
 
@@ -27,6 +28,7 @@ Amounts are stored in the mint's base units. The test mint uses six decimals, so
 | `outstanding_limit` | `u64` | Maximum principal drawn and not yet repaid, across all loans. |
 | `outstanding_principal` | `u64` | Principal currently drawn and not yet repaid. |
 | `disbursement_paused` | `bool` | Blocks new draws while repayments continue. |
+| `pause_seq` | `u64` | Count of applied pause changes; requests must quote it. |
 
 ## Loan
 
@@ -40,6 +42,14 @@ Amounts are stored in the mint's base units. The test mint uses six decimals, so
 | `offer_expiry` | `i64` | Unix timestamp after which an approved offer cannot be drawn. |
 | `approvals` | `[bool; 2]` | Approval flags aligned with the vault approvers. |
 | `state` | `LoanState` | Proposed, Approved, Active or Repaid. |
+
+## Withdrawal
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `amount` | `u64` | Amount sent to the treasury destination on execution. |
+| `approvals` | `[bool; 2]` | Approval flags aligned with the vault approvers; the proposer's is set at proposal. |
+| `state` | `WithdrawalState` | Proposed or Executed. |
 
 ## Errors
 
@@ -57,3 +67,5 @@ Amounts are stored in the mint's base units. The test mint uses six decimals, so
 | `LoanExpired` | The approved offer has expired. |
 | `InvalidLoanState` | The loan is in the wrong state for this instruction. |
 | `InvalidBorrower` / `InvalidDestination` | The signer or destination does not match the loan's borrower. |
+| `InvalidWithdrawalState` | The withdrawal was already executed. |
+| `StalePauseSequence` | The pause request quoted an outdated `pause_seq`. |
