@@ -27,6 +27,8 @@ pub struct Vault {
     pub outstanding_principal: u64,
     /// Emergency switch that blocks new loan disbursements while preserving repayments.
     pub disbursement_paused: bool,
+    /// Number of applied pause changes; callers pass it back to reject stale requests.
+    pub pause_seq: u64,
     /// PDA bump for `seeds = [b"vault", treasury, vault_id]`.
     pub bump: u8,
 }

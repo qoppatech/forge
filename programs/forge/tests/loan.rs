@@ -127,28 +127,53 @@ fn loan_lifecycle_requires_approvals_and_closes_once() {
             vault: f.vault,
         }
         .to_account_metas(None),
-        data: forge::instruction::SetDisbursementPaused { paused: true }.data(),
+        data: forge::instruction::SetDisbursementPaused {
+            paused: true,
+            expected_seq: 0,
+        }
+        .data(),
     };
     f.execute_as_approver(0, pause, Some(1)).unwrap();
 
-    let withdraw = Instruction {
+    let withdrawal_id = [8; 32];
+    let withdrawal = Pubkey::find_program_address(
+        &[b"withdrawal", f.vault.as_ref(), &withdrawal_id],
+        &forge::ID,
+    )
+    .0;
+    let propose_withdrawal = Instruction {
         program_id: forge::ID,
-        accounts: forge::accounts::WithdrawAvailable {
-            approver_a: f.approvers[0].pubkey(),
-            approver_b: f.approvers[1].pubkey(),
+        accounts: forge::accounts::ProposeWithdrawal {
+            approver: f.approvers[0].pubkey(),
             vault: f.vault,
+            withdrawal,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+        data: forge::instruction::ProposeWithdrawal {
+            withdrawal_id,
+            amount: 100_000_000,
+        }
+        .data(),
+    };
+    f.execute_as_approver(0, propose_withdrawal, None).unwrap();
+    assert_eq!(f.balance(f.tokens), FUNDING + 100_000_000);
+
+    let approve_withdrawal = Instruction {
+        program_id: forge::ID,
+        accounts: forge::accounts::ApproveWithdrawal {
+            approver: f.approvers[1].pubkey(),
+            vault: f.vault,
+            withdrawal,
             mint: f.mint,
             vault_token_account: f.tokens,
             treasury_destination: f.source,
             token_program: spl_token::ID,
         }
         .to_account_metas(None),
-        data: forge::instruction::WithdrawAvailable {
-            amount: 100_000_000,
-        }
-        .data(),
+        data: forge::instruction::ApproveWithdrawal {}.data(),
     };
-    f.execute_as_approver(0, withdraw, Some(1)).unwrap();
+    f.execute_as_approver(1, approve_withdrawal, None).unwrap();
     assert_eq!(f.balance(f.tokens), FUNDING);
     assert_eq!(f.balance(f.source), 100_000_000);
 }
