@@ -18,10 +18,10 @@
     "check-types": "nx run-many -t check-types",
     "test": "nx run-many -t test",
     "graph": "nx graph",
-    "dev:banking": "nx dev banking",
     "dev:site": "nx dev @forge/site",
     "check": "ultracite check apps/site packages *.json *.jsonc *.ts",
-    "fix": "ultracite fix apps/site packages *.json *.jsonc *.ts"
+    "fix": "ultracite fix apps/site packages *.json *.jsonc *.ts",
+    "dev:api": "nx dev @forge/api"
   },
   "dependencies": {
     "zod": "catalog:"

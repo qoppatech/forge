@@ -15,7 +15,7 @@
         packages = with pkgs; [
           bun
           nodejs_24
-          go
+          postgresql_17
           anchor
           solana-cli
           cargo
