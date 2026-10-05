@@ -1,13 +1,14 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
+
 import {
   AccountRole,
   appendTransactionMessageInstruction,
   generateKeyPair,
   getAddressFromPublicKey,
   getBase64EncodedWireTransaction,
-  type Transaction,
 } from "@solana/kit";
+import type { Transaction } from "@solana/kit";
 
 const root = new URL("../../", import.meta.url);
 const entry = new URL("dist/index.js", import.meta.url);
@@ -15,16 +16,18 @@ const sdk = (await import(entry.href)) as typeof import("./src/index.js");
 const artifact = await Bun.file(new URL("target/idl/forge.json", root)).json();
 
 const BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
-const lifetime = { blockhash: BLOCKHASH, lastValidBlockHeight: 1_000n };
+const lifetime = { blockhash: BLOCKHASH, lastValidBlockHeight: 1000n };
 
 async function newAddress() {
   const pair = await generateKeyPair();
-  return { pair, address: await getAddressFromPublicKey(pair.publicKey) };
+  return { address: await getAddressFromPublicKey(pair.publicKey), pair };
 }
 
 async function sampleIntents() {
   const keys = await Promise.all(Array.from({ length: 10 }, newAddress));
-  const [treasury, a, b, borrower, mint, source, dest, tdest] = keys.map((k) => k.address) as string[];
+  const [treasury, a, b, borrower, mint, source, dest, tdest] = keys.map(
+    (k) => k.address
+  ) as string[];
   const vaultId = await sdk.deriveOnchainId("vault", "inst-1", "main");
   const vault = await sdk.findVaultAddress(treasury as never, vaultId);
   const tokens = await sdk.findVaultTokenAddress(vault);
@@ -34,48 +37,86 @@ async function sampleIntents() {
   const withdrawal = await sdk.findWithdrawalAddress(vault, withdrawalId);
   const intents: import("./src/index.js").ForgeIntent[] = [
     {
+      approvers: [a!, b!],
       kind: "create_vault",
+      mint: mint!,
+      outstandingLimit: "10000000000",
+      perLoanLimit: "5000000000",
       treasury: treasury!,
+      treasuryDestination: tdest!,
       vault,
       vaultId,
-      mint: mint!,
       vaultTokenAccount: tokens,
-      treasuryDestination: tdest!,
-      approvers: [a!, b!],
-      perLoanLimit: "5000000000",
-      outstandingLimit: "10000000000",
     },
-    { kind: "fund_vault", treasury: treasury!, vault, mint: mint!, source: source!, vaultTokenAccount: tokens, amount: "10000000000" },
     {
-      kind: "propose_loan",
-      approver: a!,
+      amount: "10000000000",
+      kind: "fund_vault",
+      mint: mint!,
+      source: source!,
+      treasury: treasury!,
       vault,
-      loan,
-      loanId,
+      vaultTokenAccount: tokens,
+    },
+    {
+      approver: a!,
       borrower: borrower!,
       destination: dest!,
+      kind: "propose_loan",
+      loan,
+      loanId,
       mint: mint!,
+      offerExpiry: "1900000000",
       principal: "5000000000",
       termRateBps: 200,
       termSeconds: "2592000",
-      offerExpiry: "1900000000",
+      vault,
     },
-    { kind: "approve_loan", approver: b!, vault, loan },
-    { kind: "draw_loan", borrower: borrower!, vault, loan, mint: mint!, vaultTokenAccount: tokens, destination: dest! },
-    { kind: "repay_loan", borrower: borrower!, vault, loan, mint: mint!, borrowerTokens: dest!, vaultTokenAccount: tokens },
-    { kind: "propose_withdrawal", approver: a!, vault, withdrawal, withdrawalId, amount: "100000000" },
+    { approver: b!, kind: "approve_loan", loan, vault },
     {
-      kind: "approve_withdrawal",
-      approver: b!,
+      borrower: borrower!,
+      destination: dest!,
+      kind: "draw_loan",
+      loan,
+      mint: mint!,
+      vault,
+      vaultTokenAccount: tokens,
+    },
+    {
+      borrower: borrower!,
+      borrowerTokens: dest!,
+      kind: "repay_loan",
+      loan,
+      mint: mint!,
+      vault,
+      vaultTokenAccount: tokens,
+    },
+    {
+      amount: "100000000",
+      approver: a!,
+      kind: "propose_withdrawal",
       vault,
       withdrawal,
-      mint: mint!,
-      vaultTokenAccount: tokens,
-      treasuryDestination: tdest!,
+      withdrawalId,
     },
-    { kind: "set_disbursement_paused", approverA: a!, approverB: b!, vault, paused: true, expectedSeq: "3" },
+    {
+      approver: b!,
+      kind: "approve_withdrawal",
+      mint: mint!,
+      treasuryDestination: tdest!,
+      vault,
+      vaultTokenAccount: tokens,
+      withdrawal,
+    },
+    {
+      approverA: a!,
+      approverB: b!,
+      expectedSeq: "3",
+      kind: "set_disbursement_paused",
+      paused: true,
+      vault,
+    },
   ];
-  return { keys, intents };
+  return { intents, keys };
 }
 
 describe("IDL packaging and drift", () => {
@@ -86,14 +127,22 @@ describe("IDL packaging and drift", () => {
   });
 
   test("every IDL instruction has exactly one intent mapping covering all accounts and args", () => {
-    const names = artifact.instructions.map((ix: { name: string }) => ix.name).sort();
+    const names = artifact.instructions
+      .map((ix: { name: string }) => ix.name)
+      .sort();
     expect([...sdk.INTENT_KINDS].sort()).toEqual(names);
     for (const ix of artifact.instructions) {
       const spec = sdk.INTENT_SPECS[ix.name as keyof typeof sdk.INTENT_SPECS];
-      const variable = ix.accounts.filter((a: { address?: string }) => !a.address).map((a: { name: string }) => a.name);
+      const variable = ix.accounts
+        .filter((a: { address?: string }) => !a.address)
+        .map((a: { name: string }) => a.name);
       expect(Object.keys(spec.accounts).sort()).toEqual(variable.sort());
-      expect(Object.keys(spec.args).sort()).toEqual(ix.args.map((a: { name: string }) => a.name).sort());
-      for (const signer of ix.accounts.filter((a: { signer?: boolean }) => a.signer)) {
+      expect(Object.keys(spec.args).sort()).toEqual(
+        ix.args.map((a: { name: string }) => a.name).sort()
+      );
+      for (const signer of ix.accounts.filter(
+        (a: { signer?: boolean }) => a.signer
+      )) {
         expect(spec.signers).toContain(spec.accounts[signer.name]!);
       }
     }
@@ -104,7 +153,9 @@ describe("IDL packaging and drift", () => {
     for (const ix of artifact.instructions) {
       for (const account of ix.accounts) {
         const first = account.pda?.seeds?.[0];
-        if (first?.kind === "const") prefixes.set(account.name, String.fromCharCode(...first.value));
+        if (first?.kind === "const") {
+          prefixes.set(account.name, String.fromCharCode(...first.value));
+        }
       }
     }
     expect(prefixes.get("vault")).toBe("vault");
@@ -119,17 +170,29 @@ describe("instruction codec", () => {
     const { intents } = await sampleIntents();
     for (const intent of intents) {
       const ix = sdk.buildForgeInstruction(intent);
-      const idlIx = artifact.instructions.find((i: { name: string }) => i.name === intent.kind);
-      expect(Array.from(ix.data!.slice(0, 8))).toEqual(idlIx.discriminator);
+      const idlIx = artifact.instructions.find(
+        (i: { name: string }) => i.name === intent.kind
+      );
+      expect([...ix.data!.slice(0, 8)]).toEqual(idlIx.discriminator);
       ix.accounts!.forEach((meta, i) => {
         const expected = idlIx.accounts[i];
-        const signer = meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER;
-        const writable = meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER;
+        const signer =
+          meta.role === AccountRole.READONLY_SIGNER ||
+          meta.role === AccountRole.WRITABLE_SIGNER;
+        const writable =
+          meta.role === AccountRole.WRITABLE ||
+          meta.role === AccountRole.WRITABLE_SIGNER;
         expect(signer).toBe(Boolean(expected.signer));
         expect(writable).toBe(Boolean(expected.writable));
-        if (expected.address) expect(meta.address).toBe(expected.address);
+        if (expected.address) {
+          expect(meta.address).toBe(expected.address);
+        }
       });
-      const decoded = sdk.decodeForgeInstruction({ programAddress: ix.programAddress, accounts: ix.accounts!, data: new Uint8Array(ix.data!) });
+      const decoded = sdk.decodeForgeInstruction({
+        accounts: ix.accounts!,
+        data: new Uint8Array(ix.data!),
+        programAddress: ix.programAddress,
+      });
       expect(sdk.intentsEqual(decoded, intent)).toBe(true);
     }
   });
@@ -137,18 +200,32 @@ describe("instruction codec", () => {
   test("out-of-range and malformed values are rejected rather than mis-encoded", async () => {
     const { intents } = await sampleIntents();
     const fund = intents[1] as import("./src/index.js").FundVaultIntent;
-    expect(() => sdk.buildForgeInstruction({ ...fund, amount: "18446744073709551616" })).toThrow();
-    expect(() => sdk.buildForgeInstruction({ ...fund, amount: "-1" })).toThrow();
-    expect(() => sdk.buildForgeInstruction({ ...fund, amount: "1.5" })).toThrow();
+    expect(() =>
+      sdk.buildForgeInstruction({ ...fund, amount: "18446744073709551616" })
+    ).toThrow();
+    expect(() =>
+      sdk.buildForgeInstruction({ ...fund, amount: "-1" })
+    ).toThrow();
+    expect(() =>
+      sdk.buildForgeInstruction({ ...fund, amount: "1.5" })
+    ).toThrow();
     const vault = intents[0] as import("./src/index.js").CreateVaultIntent;
-    expect(() => sdk.buildForgeInstruction({ ...vault, vaultId: "abcd" })).toThrow();
+    expect(() =>
+      sdk.buildForgeInstruction({ ...vault, vaultId: "abcd" })
+    ).toThrow();
   });
 
   test("required signers put the fee payer first; pause needs both approvers", async () => {
     const { intents } = await sampleIntents();
-    const pause = intents[8] as import("./src/index.js").SetDisbursementPausedIntent;
-    expect(sdk.requiredSigners(pause)).toEqual([pause.approverA, pause.approverB]);
-    expect(sdk.intentSubject(intents[2]!)).toBe((intents[2] as { loan: string }).loan);
+    const pause =
+      intents[8] as import("./src/index.js").SetDisbursementPausedIntent;
+    expect(sdk.requiredSigners(pause)).toEqual([
+      pause.approverA,
+      pause.approverB,
+    ]);
+    expect(sdk.intentSubject(intents[2]!)).toBe(
+      (intents[2] as { loan: string }).loan
+    );
   });
 });
 
@@ -159,9 +236,9 @@ describe("plans, signing and verification", () => {
       const tx = sdk.compileIntentTransaction(intent, lifetime);
       const plan = {
         intent,
-        transaction: sdk.encodeWireTransaction(tx),
         messageHash: await sdk.messageHash(tx),
         requiredSigners: sdk.requiredSigners(intent),
+        transaction: sdk.encodeWireTransaction(tx),
       };
       expect(await sdk.verifyPlan(plan)).toEqual([]);
       const inspected = sdk.inspectTransaction(tx);
@@ -172,15 +249,17 @@ describe("plans, signing and verification", () => {
     const tx = sdk.compileIntentTransaction(fund, lifetime);
     const plan = {
       intent: fund,
-      transaction: sdk.encodeWireTransaction(tx),
       messageHash: await sdk.messageHash(tx),
       requiredSigners: sdk.requiredSigners(fund),
+      transaction: sdk.encodeWireTransaction(tx),
     };
     // The signer asked for 1 token; a plan for 10,000 must fail review.
-    expect(await sdk.verifyPlan(plan, { ...fund, amount: "1000000" })).toContain(
-      "Encoded instruction does not match the intent",
+    expect(
+      await sdk.verifyPlan(plan, { ...fund, amount: "1000000" })
+    ).toContain("Encoded instruction does not match the intent");
+    expect(await sdk.verifyPlan({ ...plan, messageHash: "00" })).toContain(
+      "Message hash mismatch"
     );
-    expect(await sdk.verifyPlan({ ...plan, messageHash: "00" })).toContain("Message hash mismatch");
   });
 
   test("an extra instruction in the bytes fails review", async () => {
@@ -190,109 +269,229 @@ describe("plans, signing and verification", () => {
     const tx = sdk.compileIntentTransaction(fund, lifetime);
     const msg = sdk.inspectTransaction(tx);
     expect(msg.instructions).toHaveLength(1);
-    const { compileTransaction, createTransactionMessage, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash, address } = await import("@solana/kit");
+    const {
+      compileTransaction,
+      createTransactionMessage,
+      pipe,
+      setTransactionMessageFeePayer,
+      setTransactionMessageLifetimeUsingBlockhash,
+      address,
+    } = await import("@solana/kit");
     const tampered = compileTransaction(
       pipe(
         createTransactionMessage({ version: 0 }),
-        (m) => setTransactionMessageFeePayer(address(sdk.requiredSigners(fund)[0]!), m),
-        (m) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: BLOCKHASH as never, lastValidBlockHeight: 1n }, m),
-        (m) => appendTransactionMessageInstruction(sdk.buildForgeInstruction(fund), m),
-        (m) => appendTransactionMessageInstruction(extra, m),
-      ),
+        (m) =>
+          setTransactionMessageFeePayer(
+            address(sdk.requiredSigners(fund)[0]!),
+            m
+          ),
+        (m) =>
+          setTransactionMessageLifetimeUsingBlockhash(
+            { blockhash: BLOCKHASH as never, lastValidBlockHeight: 1n },
+            m
+          ),
+        (m) =>
+          appendTransactionMessageInstruction(
+            sdk.buildForgeInstruction(fund),
+            m
+          ),
+        (m) => appendTransactionMessageInstruction(extra, m)
+      )
     );
     const problems = await sdk.verifyPlan({
       intent: fund,
-      transaction: getBase64EncodedWireTransaction(tampered),
       messageHash: await sdk.messageHash(tampered),
       requiredSigners: sdk.requiredSigners(fund),
+      transaction: getBase64EncodedWireTransaction(tampered),
     });
-    expect(problems.some((p) => p.startsWith("Expected 1 instruction"))).toBe(true);
+    expect(problems.some((p) => p.startsWith("Expected 1 instruction"))).toBe(
+      true
+    );
+  });
+
+  test("operation memos make identical intents distinct transactions and are verified", async () => {
+    const { intents } = await sampleIntents();
+    const fund = intents[1]!;
+    const plain = sdk.compileIntentTransaction(fund, lifetime);
+    const twin = sdk.compileIntentTransaction(fund, lifetime);
+    // Same intent + same blockhash = the same message, hence one transaction id on chain.
+    expect(await sdk.messageHash(plain)).toBe(await sdk.messageHash(twin));
+    const id = crypto.randomUUID();
+    const memoA = sdk.operationMemo(id, 1);
+    const memoB = sdk.operationMemo(crypto.randomUUID(), 1);
+    const a = sdk.compileIntentTransaction(fund, lifetime, { memo: memoA });
+    const b = sdk.compileIntentTransaction(fund, lifetime, { memo: memoB });
+    expect(await sdk.messageHash(a)).not.toBe(await sdk.messageHash(b));
+    expect(sdk.parseOperationMemo(memoA)).toEqual({
+      attemptNo: 1,
+      operationId: id,
+    });
+    expect(sdk.parseOperationMemo("hello")).toBeUndefined();
+    const inspected = sdk.inspectTransaction(a);
+    expect(
+      inspected.instructions.map((ix) => ix.memo ?? ix.intent?.kind)
+    ).toEqual([memoA, "fund_vault"]);
+    const plan = {
+      intent: fund,
+      memo: memoA,
+      messageHash: await sdk.messageHash(a),
+      requiredSigners: sdk.requiredSigners(fund),
+      transaction: sdk.encodeWireTransaction(a),
+    };
+    expect(await sdk.verifyPlan(plan)).toEqual([]);
+    expect(await sdk.verifyPlan({ ...plan, memo: memoB })).toContain(
+      "Operation memo is missing or differs from the plan"
+    );
   });
 
   test("partial signatures merge; altered messages and forged signatures are rejected", async () => {
     const a = await newAddress();
     const b = await newAddress();
     const { intents } = await sampleIntents();
-    const pause = { ...(intents[8] as import("./src/index.js").SetDisbursementPausedIntent), approverA: a.address, approverB: b.address };
+    const pause = {
+      ...(intents[8] as import("./src/index.js").SetDisbursementPausedIntent),
+      approverA: a.address,
+      approverB: b.address,
+    };
     const stored = sdk.compileIntentTransaction(pause, lifetime);
     const unsigned = sdk.encodeWireTransaction(stored);
 
     const signedByA = await sdk.signPlanTransaction(unsigned, [a.pair]);
-    const first = await sdk.mergeSignatures(stored, sdk.decodeWireTransaction(signedByA));
+    const first = await sdk.mergeSignatures(
+      stored,
+      sdk.decodeWireTransaction(signedByA)
+    );
     expect(first.added).toEqual([a.address]);
     expect(sdk.isFullySigned(first.transaction)).toBe(false);
 
     const signedByB = await sdk.signPlanTransaction(unsigned, [b.pair]);
-    const second = await sdk.mergeSignatures(first.transaction, sdk.decodeWireTransaction(signedByB));
+    const second = await sdk.mergeSignatures(
+      first.transaction,
+      sdk.decodeWireTransaction(signedByB)
+    );
     expect(second.added).toEqual([b.address]);
     expect(sdk.isFullySigned(second.transaction)).toBe(true);
-    expect((await sdk.checkSignatures(second.transaction)).every((c) => c.status === "valid")).toBe(true);
+    expect(
+      (await sdk.checkSignatures(second.transaction)).every(
+        (c) => c.status === "valid"
+      )
+    ).toBe(true);
     expect(sdk.transactionSignature(second.transaction)).toBeString();
 
     // Re-submitting the same signature is idempotent.
-    const again = await sdk.mergeSignatures(second.transaction, sdk.decodeWireTransaction(signedByA));
+    const again = await sdk.mergeSignatures(
+      second.transaction,
+      sdk.decodeWireTransaction(signedByA)
+    );
     expect(again.added).toEqual([]);
 
     // A signature over different bytes (new blockhash) is rejected.
-    const other = sdk.compileIntentTransaction(pause, { ...lifetime, blockhash: "11111111111111111111111111111111" });
-    const otherSigned = await sdk.signPlanTransaction(sdk.encodeWireTransaction(other), [a.pair]);
-    await expect(sdk.mergeSignatures(stored, sdk.decodeWireTransaction(otherSigned))).rejects.toThrow("differs");
+    const other = sdk.compileIntentTransaction(pause, {
+      ...lifetime,
+      blockhash: "11111111111111111111111111111111",
+    });
+    const otherSigned = await sdk.signPlanTransaction(
+      sdk.encodeWireTransaction(other),
+      [a.pair]
+    );
+    await expect(
+      sdk.mergeSignatures(stored, sdk.decodeWireTransaction(otherSigned))
+    ).rejects.toThrow("differs");
 
     // A forged signature slot is rejected.
     const forged: Transaction = {
       ...sdk.decodeWireTransaction(signedByA),
-      signatures: { ...stored.signatures, [b.address]: new Uint8Array(64).fill(7) },
+      signatures: {
+        ...stored.signatures,
+        [b.address]: new Uint8Array(64).fill(7),
+      },
     } as Transaction;
-    await expect(sdk.mergeSignatures(stored, forged)).rejects.toThrow("Invalid signature");
+    await expect(sdk.mergeSignatures(stored, forged)).rejects.toThrow(
+      "Invalid signature"
+    );
   });
 });
 
 describe("errors, accounts and views", () => {
   test("transaction errors are classified for reconciliation", () => {
-    const at = (code: number | bigint) => ({ InstructionError: [0, { Custom: code }] });
+    const at = (code: number | bigint) => ({
+      InstructionError: [0, { Custom: code }],
+    });
     expect(sdk.decodeTransactionError(at(6010)).category).toBe("replay");
     expect(sdk.decodeTransactionError(at(6011)).name).toBe("AlreadyApproved");
-    expect(sdk.decodeTransactionError(at(6018n)).name).toBe("InvalidWithdrawalState");
+    expect(sdk.decodeTransactionError(at(6018n)).name).toBe(
+      "InvalidWithdrawalState"
+    );
     expect(sdk.decodeTransactionError(at(6015)).category).toBe("rejected");
-    expect(sdk.decodeTransactionError(at(6019)).name).toBe("StalePauseSequence");
+    expect(sdk.decodeTransactionError(at(6019)).name).toBe(
+      "StalePauseSequence"
+    );
     expect(sdk.decodeTransactionError(at(6004)).category).toBe("unauthorized");
     expect(sdk.decodeTransactionError(at(2012)).name).toBe("ConstraintAddress");
-    expect(sdk.decodeTransactionError(at(0), ["propose_loan"])).toMatchObject({ name: "AccountAlreadyInUse", category: "replay" });
-    expect(sdk.decodeTransactionError(at(1), ["repay_loan"])).toMatchObject({ name: "InsufficientFunds", category: "token" });
-    expect(sdk.decodeTransactionError("BlockhashNotFound").category).toBe("transaction");
+    expect(sdk.decodeTransactionError(at(0), ["propose_loan"])).toMatchObject({
+      category: "replay",
+      name: "AccountAlreadyInUse",
+    });
+    expect(sdk.decodeTransactionError(at(1), ["repay_loan"])).toMatchObject({
+      category: "token",
+      name: "InsufficientFunds",
+    });
+    expect(sdk.decodeTransactionError("BlockhashNotFound").category).toBe(
+      "transaction"
+    );
   });
 
   test("account decoders read IDL layouts", async () => {
     const { encodeWithDiscriminator } = await import("./src/codec.js");
     const { idl, idlTypeDef } = await import("./src/idl.js");
     const def = idlTypeDef("Withdrawal");
-    if (def.type.kind !== "struct") throw new Error("struct expected");
+    if (def.type.kind !== "struct") {
+      throw new Error("struct expected");
+    }
     const vault = (await newAddress()).address;
-    const disc = idl.accounts.find((a) => a.name === "Withdrawal")!.discriminator;
+    const disc = idl.accounts.find(
+      (a) => a.name === "Withdrawal"
+    )!.discriminator;
     const data = encodeWithDiscriminator(disc, def.type.fields, {
-      vault,
-      withdrawal_id: new Uint8Array(32).fill(1),
       amount: 42n,
       approvals: [true, false],
-      state: "Proposed",
-      proposed_at: 10n,
-      executed_at: 0n,
       bump: 254,
+      executed_at: 0n,
+      proposed_at: 10n,
+      state: "Proposed",
+      vault,
+      withdrawal_id: new Uint8Array(32).fill(1),
     });
     const decoded = sdk.decodeWithdrawalAccount(data);
-    expect(decoded).toMatchObject({ vault, amount: 42n, approvals: [true, false], state: "Proposed", bump: 254 });
+    expect(decoded).toMatchObject({
+      amount: 42n,
+      approvals: [true, false],
+      bump: 254,
+      state: "Proposed",
+      vault,
+    });
     expect(decoded.withdrawalId).toBe("01".repeat(32));
     expect(sdk.decodeForgeAccount(data)?.type).toBe("Withdrawal");
     expect(() => sdk.decodeVaultAccount(data)).toThrow();
   });
 
   test("loan views compute expiry and overdue without stored states", () => {
-    const base = { offerExpiry: 100n, disbursedAt: 0n, termSeconds: 50n };
-    expect(sdk.loanView({ ...base, state: "Approved" }, 100n).status).toBe("approved");
-    expect(sdk.loanView({ ...base, state: "Approved" }, 101n).status).toBe("offer_expired");
-    expect(sdk.loanView({ ...base, state: "Active", disbursedAt: 10n }, 60n)).toEqual({ status: "active", dueAt: 60n });
-    expect(sdk.loanView({ ...base, state: "Active", disbursedAt: 10n }, 61n).status).toBe("overdue");
-    expect(sdk.loanView({ ...base, state: "Repaid", disbursedAt: 10n }, 999n).status).toBe("repaid");
+    const base = { disbursedAt: 0n, offerExpiry: 100n, termSeconds: 50n };
+    expect(sdk.loanView({ ...base, state: "Approved" }, 100n).status).toBe(
+      "approved"
+    );
+    expect(sdk.loanView({ ...base, state: "Approved" }, 101n).status).toBe(
+      "offer_expired"
+    );
+    expect(
+      sdk.loanView({ ...base, disbursedAt: 10n, state: "Active" }, 60n)
+    ).toEqual({ dueAt: 60n, status: "active" });
+    expect(
+      sdk.loanView({ ...base, disbursedAt: 10n, state: "Active" }, 61n).status
+    ).toBe("overdue");
+    expect(
+      sdk.loanView({ ...base, disbursedAt: 10n, state: "Repaid" }, 999n).status
+    ).toBe("repaid");
   });
 
   test("token amounts parse and format in integer base units", () => {
@@ -307,6 +506,8 @@ describe("errors, accounts and views", () => {
     expect(a).toHaveLength(64);
     expect(await sdk.deriveOnchainId("loan", "vault-1", "LN-1")).toBe(a);
     expect(await sdk.deriveOnchainId("loan", "vault-2", "LN-1")).not.toBe(a);
-    expect(await sdk.deriveOnchainId("withdrawal", "vault-1", "LN-1")).not.toBe(a);
+    expect(await sdk.deriveOnchainId("withdrawal", "vault-1", "LN-1")).not.toBe(
+      a
+    );
   });
 });

@@ -24,7 +24,7 @@ Status: accepted (2026-10-05)
 
 **Flow**
 
-1. `prepare`: the API builds the unsigned message with the SDK and a `confirmed` blockhash. It persists the message bytes and `lastValidBlockHeight` as attempt N.
+1. `prepare`: the API builds the unsigned message (operation memo plus Forge instruction) with the SDK and a `confirmed` blockhash. It persists the message bytes and `lastValidBlockHeight` as attempt N.
 2. `sign`: each required signer verifies the decoded plan, then signs locally.
 3. `submit`: the API accepts full or partial signatures. Each signature must verify against the *stored* message bytes. Extra instructions or altered messages are rejected. When every signer has signed, the API persists the signed bytes and signature before any broadcast.
 4. `broadcast`: the worker rebroadcasts the **same bytes** until the transaction lands or expiry is proven. It never rebuilds a transaction.
@@ -57,6 +57,10 @@ Status: accepted (2026-10-05)
 - `Idempotency-Key` plus the SHA-256 of the canonical request, unique per institution.
 - Same key and same payload returns the original operation. Same key with a different payload returns 409.
 - On-chain IDs are derived deterministically from business references: `sha256("forge:<kind>:v1" | scope | ref)`. A retried request therefore targets the same PDA.
+
+**Operation memo.** Each attempt's transaction is an SPL Memo `forge:op:<operationId>:<attemptNo>` followed by exactly one Forge instruction.
+- Without it, two identical requests planned in the same slot compile to byte-identical messages. Ed25519 is deterministic, so they share one transaction id and the chain executes only one. The local end-to-end run found this as a signature collision between two concurrent approvals.
+- The memo also lets the indexer match transactions a wallet re-signed or modified before broadcasting.
 
 ## Consequences
 

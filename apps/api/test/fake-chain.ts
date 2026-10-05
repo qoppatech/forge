@@ -31,6 +31,8 @@ export class FakeChain implements Chain {
   finalizedHeight = 968n;
   slot = 5_000n;
   rpcDown = false;
+  /** When set, every plan gets this blockhash (two requests within one slot). */
+  fixedBlockhash: string | undefined;
   sendFailure: Error | undefined;
   readonly sent: string[] = [];
   readonly statuses = new Map<string, SignatureStatus>();
@@ -44,7 +46,7 @@ export class FakeChain implements Chain {
 
   async getLatestBlockhash() {
     this.guard();
-    return { blockhash: randomAddress(), lastValidBlockHeight: this.confirmedHeight + 150n };
+    return { blockhash: this.fixedBlockhash ?? randomAddress(), lastValidBlockHeight: this.confirmedHeight + 150n };
   }
 
   async getBlockHeight(commitment: Commitment) {
@@ -78,6 +80,8 @@ export class FakeChain implements Chain {
     let list = all;
     if (options.before) list = list.slice(list.findIndex((i) => i.signature === options.before) + 1);
     if (options.until) {
+      // Like a real node, an `until` signature that is no longer in its ledger is an error.
+      if (!this.transactions.has(options.until)) throw new Error(`Transaction ${options.until} not found`);
       const stop = list.findIndex((i) => i.signature === options.until);
       if (stop >= 0) list = list.slice(0, stop);
     }
@@ -126,7 +130,9 @@ export class FakeChain implements Chain {
       instructions: inspected.instructions.map((ix, index) => ({
         programAddress: ix.programAddress,
         accounts: ix.accounts,
-        data: ix.intent ? new Uint8Array(buildForgeInstruction(ix.intent).data!) : new Uint8Array(),
+        data: ix.intent
+          ? new Uint8Array(buildForgeInstruction(ix.intent).data!)
+          : new TextEncoder().encode(ix.memo ?? ""),
         index,
         innerIndex: -1,
       })),
@@ -161,6 +167,17 @@ export class FakeChain implements Chain {
         { signature: input.signature, slot: this.slot, err: null },
         ...(this.history.get(b.account) ?? []),
       ]);
+    }
+  }
+
+  /** Drops transactions from the node's ledger, as a pruning RPC node would. */
+  prune(signatures: string[]) {
+    for (const signature of signatures) {
+      this.transactions.delete(signature);
+      this.statuses.delete(signature);
+      for (const [address, list] of this.history) {
+        this.history.set(address, list.filter((i) => i.signature !== signature));
+      }
     }
   }
 

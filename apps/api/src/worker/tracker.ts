@@ -130,11 +130,14 @@ export class Tracker {
   }
 
   private async expireIfProven(attempt: ClaimedAttempt) {
-    // Absence in the status cache is not enough: confirm against finalized history.
+    // Absence in the status cache is not enough: confirm against finalized history, and index
+    // the vault so a landed transaction is recognised even if this node's status lookup missed it.
     if (await this.chain.getTransaction(attempt.signature!)) {
       await this.reconciler.processSignature(attempt.signature!);
       return;
     }
+    const [operation] = await this.db`SELECT vault FROM operations WHERE id = ${attempt.operation_id}`;
+    if (operation) await this.indexer.syncVault(operation.vault);
     await this.db.begin(async (sql) => {
       const expired = await sql`
         UPDATE tx_attempts SET status = 'expired', lease_until = NULL, updated_at = now()

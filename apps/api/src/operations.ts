@@ -10,6 +10,7 @@ import {
   isFullySigned,
   mergeSignatures,
   messageHash,
+  operationMemo,
   requiredSigners,
   sha256Hex,
   stableStringify,
@@ -98,9 +99,9 @@ export class Operations {
     private readonly chain: Chain,
   ) {}
 
-  private async plan(intent: ForgeIntent, display: Record<string, string>) {
+  private async plan(intent: ForgeIntent, display: Record<string, string>, memo: string) {
     const lifetime = await this.chain.getLatestBlockhash();
-    const transaction = compileIntentTransaction(intent, lifetime);
+    const transaction = compileIntentTransaction(intent, lifetime, { memo });
     const signers = requiredSigners(intent);
     const plan: TransactionPlan = {
       intent,
@@ -111,6 +112,7 @@ export class Operations {
       network: this.chain.network,
       transaction: encodeWireTransaction(transaction),
       messageHash: await messageHash(transaction),
+      memo,
       blockhash: lifetime.blockhash,
       lastValidBlockHeight: String(lifetime.lastValidBlockHeight),
     };
@@ -133,13 +135,15 @@ export class Operations {
     const existing = await this.findByKey(input.institution.id, input.idempotencyKey);
     if (existing) return { created: false, operation: await this.reuse(existing, input.requestHash) };
 
-    const plan = await this.plan(input.intent, input.display);
+    // The id is chosen first so the plan's memo can reference it.
+    const operationId = crypto.randomUUID();
+    const plan = await this.plan(input.intent, input.display, operationMemo(operationId, 1));
     try {
       const id = await this.db.begin(async (tx) => {
         const [operation] = await tx`
-          INSERT INTO operations (institution_id, idempotency_key, request_hash, kind, vault,
+          INSERT INTO operations (id, institution_id, idempotency_key, request_hash, kind, vault,
             subject, intent, display, required_signers, status)
-          VALUES (${input.institution.id}, ${input.idempotencyKey}, ${input.requestHash},
+          VALUES (${operationId}, ${input.institution.id}, ${input.idempotencyKey}, ${input.requestHash},
             ${input.intent.kind}, ${(input.intent as { vault: string }).vault},
             ${intentSubject(input.intent)}, ${input.intent}, ${input.display},
             ${plan.requiredSigners}, 'prepared')
@@ -253,13 +257,13 @@ export class Operations {
     if (operation.status !== "expired") {
       throw conflict("not_expired", `Only expired operations can be re-prepared (status: ${operation.status})`);
     }
-    const plan = await this.plan(operation.intent, operation.display);
+    const [{ next }] = await this.db`
+      SELECT coalesce(max(attempt_no), 0) + 1 AS next FROM tx_attempts WHERE operation_id = ${operationId}`;
+    const attemptNo = Number(next);
+    const plan = await this.plan(operation.intent, operation.display, operationMemo(operationId, attemptNo));
     try {
       await this.db.begin(async (tx) => {
-        const [{ next }] = await tx`
-          SELECT coalesce(max(attempt_no), 0) + 1 AS next FROM tx_attempts
-          WHERE operation_id = ${operationId}`;
-        await this.insertAttempt(tx as Db, operationId, Number(next), plan);
+        await this.insertAttempt(tx as Db, operationId, attemptNo, plan);
         const updated = await tx`
           UPDATE operations SET status = 'prepared', status_reason = NULL, updated_at = now()
           WHERE id = ${operationId} AND status = 'expired' RETURNING id`;
@@ -368,6 +372,7 @@ export function toView(
           network,
           transaction: bytesToBase64(new Uint8Array(open.unsigned_tx)),
           messageHash: open.message_hash,
+          memo: operationMemo(operation.id, open.attempt_no),
           blockhash: open.blockhash,
           lastValidBlockHeight: open.last_valid_block_height,
         }

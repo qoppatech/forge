@@ -11,6 +11,8 @@ export class Worker {
   readonly tracker: Tracker;
   readonly webhooks: Webhooks;
   private ticks = 0;
+  /** Last failure per stage, kept until that stage next succeeds (stages run at different rates). */
+  private readonly stageErrors = new Map<string, { message: string; at: string }>();
   private running = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -36,14 +38,15 @@ export class Worker {
     if ((this.ticks - 1) % (this.options.indexEveryTicks ?? 3) === 0) {
       stages.push(["indexer", () => this.indexer.syncAll()]);
     }
-    const errors: Record<string, string> = {};
     for (const [name, stage] of stages) {
       try {
         await stage();
+        this.stageErrors.delete(name);
       } catch (error) {
-        errors[name] = (error as Error).message;
+        this.stageErrors.set(name, { message: (error as Error).message, at: new Date().toISOString() });
       }
     }
+    const errors = Object.fromEntries(this.stageErrors);
     await this.db`
       INSERT INTO worker_heartbeats (worker_id, seen_at, details)
       VALUES (${this.options.workerId}, now(), ${{ ticks: this.ticks, errors }})

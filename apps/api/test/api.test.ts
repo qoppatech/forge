@@ -256,7 +256,7 @@ describe("worker lifecycle (#5)", () => {
     const secondWire = await h.lastSent();
     await h.chain.land(firstWire);
     h.setLoan(loan.intent.loan, { ...loanAccount, approvals: [true, false] });
-    await h.chain.land(secondWire, { err: { InstructionError: [0, { Custom: 6011 }] } });
+    await h.chain.land(secondWire, { err: { InstructionError: [1, { Custom: 6011 }] } });
     await h.worker().tick();
 
     expect((await h.api("GET", `/v1/operations/${first.id}`)).body.status).toBe("finalized");
@@ -283,13 +283,13 @@ describe("worker lifecycle (#5)", () => {
       executedAt: 0n,
       bump: 250,
     });
-    await h.chain.land(await h.lastSent(), { err: { InstructionError: [0, { Custom: 0 }] } });
+    await h.chain.land(await h.lastSent(), { err: { InstructionError: [1, { Custom: 0 }] } });
     await h.worker().tick();
     expect((await h.api("GET", `/v1/operations/${withdrawal.id}`)).body.status).toBe("needs_review");
 
     const approve = (await h.api("POST", `/v1/withdrawals/${withdrawal.intent.withdrawal}/approve`, { approver: h.roles.approverA.address })).body;
     await h.sign(approve, h.roles.approverA);
-    await h.chain.land(await h.lastSent(), { err: { InstructionError: [0, { Custom: 6015 }] } });
+    await h.chain.land(await h.lastSent(), { err: { InstructionError: [1, { Custom: 6015 }] } });
     const sends = h.chain.sent.length;
     await h.worker().tick();
     const failed = (await h.api("GET", `/v1/operations/${approve.id}`)).body;
@@ -348,6 +348,66 @@ describe("worker lifecycle (#5)", () => {
     const op = (await h.api("GET", `/v1/operations/${fund.id}`)).body;
     expect(op.status).toBe("finalized");
     expect(op.appliedSignature).toBeString();
+  });
+
+  test("identical requests in the same slot become distinct transactions (operation memo)", async () => {
+    const { intent } = await h.createVault();
+    h.chain.fixedBlockhash = (await h.chain.getLatestBlockhash()).blockhash;
+    const body = { amount: "11", source: h.accounts.source };
+    const first = (await h.api("POST", `/v1/vaults/${intent.vault}/fund`, body)).body;
+    const second = (await h.api("POST", `/v1/vaults/${intent.vault}/fund`, body)).body;
+    expect(first.plan.blockhash).toBe(second.plan.blockhash);
+    expect(first.plan.messageHash).not.toBe(second.plan.messageHash);
+    const a = await h.sign(first, h.roles.treasury);
+    const b = await h.sign(second, h.roles.treasury);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(a.body.attempts[0].signature).not.toBe(b.body.attempts[0].signature);
+  });
+
+  test("a wallet that re-signs with a fresh blockhash is still matched by the operation memo", async () => {
+    const { intent } = await h.createVault();
+    const fund = (await h.api("POST", `/v1/vaults/${intent.vault}/fund`, { amount: "12", source: h.accounts.source })).body;
+    const { compileIntentTransaction, encodeWireTransaction } = await import("@forge/sdk");
+    const rebuilt = compileIntentTransaction(fund.intent, await h.chain.getLatestBlockhash(), { memo: fund.plan.memo });
+    const signed = await signPlanTransaction(encodeWireTransaction(rebuilt), [h.roles.treasury.pair]);
+    await h.chain.land(signed);
+    await h.worker().tick();
+    const op = (await h.api("GET", `/v1/operations/${fund.id}`)).body;
+    expect(op.status).toBe("finalized");
+    expect(op.attempts[0].status).toBe("landed_ok");
+  });
+
+  test("the indexer recovers when the node pruned its cursor transaction", async () => {
+    const { intent } = await h.createVault();
+    const worker = h.worker();
+    await worker.indexer.syncAll();
+    const cursors = await h.db`SELECT signature FROM cursors`;
+    expect(cursors.length).toBeGreaterThan(0);
+    h.chain.prune(cursors.map((c: { signature: string }) => c.signature));
+    h.setVault(intent, {}, 5n);
+    h.chain.landRaw({
+      signature: "pruned".padEnd(88, "2"),
+      feePayer: h.roles.borrower.address,
+      tokenBalances: [{ account: intent.vaultTokenAccount, mint: h.accounts.mint, owner: intent.vault, pre: 0n, post: 5n }],
+    });
+    await worker.indexer.syncAll();
+    const exceptions = await h.db`SELECT kind, amount FROM exceptions`;
+    expect(exceptions).toHaveLength(1);
+    expect(exceptions[0]).toMatchObject({ kind: "unexpected_deposit", amount: "5" });
+  });
+
+  test("worker heartbeat keeps a failing stage's error until that stage recovers", async () => {
+    await h.createVault();
+    const worker = h.worker();
+    h.chain.rpcDown = true;
+    await worker.tick();
+    h.chain.rpcDown = false;
+    const [{ details }] = await h.db`SELECT details FROM worker_heartbeats WHERE worker_id = 'w1'`;
+    expect(Object.keys(details.errors)).toContain("indexer");
+    await worker.tick();
+    const [after] = await h.db`SELECT details FROM worker_heartbeats WHERE worker_id = 'w1'`;
+    expect(after.details.errors).toEqual({});
   });
 
   test("webhooks are signed, retried and keep a stable event id", async () => {

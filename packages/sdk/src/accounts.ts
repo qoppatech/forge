@@ -1,5 +1,8 @@
-import { decodeWithDiscriminator, type BorshValue } from "./codec.js";
-import { idlAccountDiscriminator, idlTypeDef, type IdlField } from "./idl.js";
+import { hexToBytes } from "./bytes.js";
+import { decodeWithDiscriminator, encodeWithDiscriminator } from "./codec.js";
+import type { BorshValue } from "./codec.js";
+import { idlAccountDiscriminator, idlTypeDef } from "./idl.js";
+import type { IdlField } from "./idl.js";
 
 export interface VaultAccount {
   treasury: string;
@@ -55,40 +58,62 @@ export type ForgeAccount =
   | { type: "Loan"; data: LoanAccount }
   | { type: "Withdrawal"; data: WithdrawalAccount };
 
-const camel = (name: string) => name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+const camel = (name: string) =>
+  name.replaceAll(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 
 function normalize(value: BorshValue): unknown {
   if (value instanceof Uint8Array) {
     return Array.from(value, (b) => b.toString(16).padStart(2, "0")).join("");
   }
-  if (Array.isArray(value)) return value.map(normalize);
-  return typeof value === "object" && value !== null ? decodeObject(value) : value;
+  if (Array.isArray(value)) {
+    return value.map(normalize);
+  }
+  return typeof value === "object" && value !== null
+    ? decodeObject(value)
+    : value;
 }
 
-function decodeObject(values: { [key: string]: BorshValue }): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(values).map(([k, v]) => [camel(k), normalize(v)]));
+function decodeObject(
+  values: Record<string, BorshValue>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(values).map(([k, v]) => [camel(k), normalize(v)])
+  );
 }
 
 function decode<T>(name: string, data: Uint8Array): T | undefined {
   const def = idlTypeDef(name);
-  if (def.type.kind !== "struct") throw new Error(`${name} is not a struct`);
+  if (def.type.kind !== "struct") {
+    throw new Error(`${name} is not a struct`);
+  }
   const fields: IdlField[] = def.type.fields;
   // Accounts may carry trailing allocation; only the declared fields are read.
-  const values = decodeWithDiscriminator(idlAccountDiscriminator(name), fields, data, {
-    exact: false,
-  });
-  if (!values) return undefined;
+  const values = decodeWithDiscriminator(
+    idlAccountDiscriminator(name),
+    fields,
+    data,
+    {
+      exact: false,
+    }
+  );
+  if (!values) {
+    return undefined;
+  }
   return decodeObject(values) as T;
 }
 
 function required<T>(name: string, data: Uint8Array): T {
   const value = decode<T>(name, data);
-  if (!value) throw new Error(`Account data is not a Forge ${name}`);
+  if (!value) {
+    throw new Error(`Account data is not a Forge ${name}`);
+  }
   return value;
 }
 
-export const decodeVaultAccount = (data: Uint8Array) => required<VaultAccount>("Vault", data);
-export const decodeLoanAccount = (data: Uint8Array) => required<LoanAccount>("Loan", data);
+export const decodeVaultAccount = (data: Uint8Array) =>
+  required<VaultAccount>("Vault", data);
+export const decodeLoanAccount = (data: Uint8Array) =>
+  required<LoanAccount>("Loan", data);
 export const decodeWithdrawalAccount = (data: Uint8Array) =>
   required<WithdrawalAccount>("Withdrawal", data);
 
@@ -96,7 +121,40 @@ export const decodeWithdrawalAccount = (data: Uint8Array) =>
 export function decodeForgeAccount(data: Uint8Array): ForgeAccount | undefined {
   for (const type of ["Vault", "Loan", "Withdrawal"] as const) {
     const decoded = decode<never>(type, data);
-    if (decoded) return { type, data: decoded } as ForgeAccount;
+    if (decoded) {
+      return { type, data: decoded } as ForgeAccount;
+    }
   }
   return undefined;
+}
+
+/**
+ * Encodes a Forge account in its on-chain layout (discriminator + Borsh fields). Used for
+ * fixtures and simulations; the inverse of the decoders above.
+ */
+export function encodeForgeAccount(
+  type: "Vault" | "Loan" | "Withdrawal",
+  value: VaultAccount | LoanAccount | WithdrawalAccount
+): Uint8Array {
+  const def = idlTypeDef(type);
+  if (def.type.kind !== "struct") {
+    throw new Error(`${type} is not a struct`);
+  }
+  const source = value as unknown as Record<string, unknown>;
+  const fields: Record<string, BorshValue> = {};
+  for (const field of def.type.fields) {
+    const raw = source[camel(field.name)];
+    const isBytes =
+      typeof field.type === "object" &&
+      "array" in field.type &&
+      field.type.array[0] === "u8";
+    fields[field.name] = (
+      isBytes ? hexToBytes(String(raw), 32) : raw
+    ) as BorshValue;
+  }
+  return encodeWithDiscriminator(
+    idlAccountDiscriminator(type),
+    def.type.fields,
+    fields
+  );
 }

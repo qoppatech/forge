@@ -1,5 +1,6 @@
 import { idl } from "./idl.js";
-import { INIT_KINDS, type IntentKind } from "./intents.js";
+import { INIT_KINDS } from "./intents.js";
+import type { IntentKind } from "./intents.js";
 
 /**
  * How an orchestrator should treat a failed Forge transaction:
@@ -27,8 +28,16 @@ export interface DecodedTransactionError {
   category: ErrorCategory;
 }
 
-const REPLAY = new Set(["AlreadyApproved", "InvalidLoanState", "InvalidWithdrawalState"]);
-const UNAUTHORIZED = new Set(["UnauthorizedApprover", "InvalidBorrower", "InvalidDestination"]);
+const REPLAY = new Set([
+  "AlreadyApproved",
+  "InvalidLoanState",
+  "InvalidWithdrawalState",
+]);
+const UNAUTHORIZED = new Set([
+  "UnauthorizedApprover",
+  "InvalidBorrower",
+  "InvalidDestination",
+]);
 
 const ANCHOR_ERRORS: Record<number, string> = {
   2000: "ConstraintMut",
@@ -49,10 +58,10 @@ const ANCHOR_ERRORS: Record<number, string> = {
 const TOKEN_ERRORS: Record<number, string> = {
   0: "NotRentExempt",
   1: "InsufficientFunds",
+  17: "AccountFrozen",
   2: "InvalidMint",
   3: "MintMismatch",
   4: "OwnerMismatch",
-  17: "AccountFrozen",
 };
 
 export const FORGE_ERRORS = idl.errors;
@@ -75,20 +84,26 @@ function customCode(value: unknown): number | undefined {
  */
 export function decodeTransactionError(
   err: unknown,
-  kinds: readonly (IntentKind | undefined)[] = [],
+  kinds: readonly (IntentKind | undefined)[] = []
 ): DecodedTransactionError {
   if (typeof err === "string") {
-    return { name: err, message: err, category: "transaction" };
+    return { category: "transaction", message: err, name: err };
   }
   if (err && typeof err === "object" && "InstructionError" in err) {
-    const [rawIndex, detail] = (err as { InstructionError: [number | bigint, unknown] })
-      .InstructionError;
+    const [rawIndex, detail] = (
+      err as { InstructionError: [number | bigint, unknown] }
+    ).InstructionError;
     const instructionIndex = Number(rawIndex);
     const kind = kinds[instructionIndex];
     const code = customCode(detail);
     if (code === undefined) {
       const name = typeof detail === "string" ? detail : JSON.stringify(detail);
-      return { instructionIndex, name, message: name, category: "invalid_accounts" };
+      return {
+        category: "invalid_accounts",
+        instructionIndex,
+        message: name,
+        name,
+      };
     }
     if (code >= 6000) {
       const forge = forgeErrorByCode(code);
@@ -100,23 +115,35 @@ export function decodeTransactionError(
           : forge
             ? "rejected"
             : "unknown";
-      return { instructionIndex, code, name, message: forge?.msg ?? name, category };
+      return {
+        category,
+        code,
+        instructionIndex,
+        message: forge?.msg ?? name,
+        name,
+      };
     }
     if (code >= 100) {
       const name = ANCHOR_ERRORS[code] ?? `AnchorError(${code})`;
-      return { instructionIndex, code, name, message: name, category: "invalid_accounts" };
+      return {
+        category: "invalid_accounts",
+        code,
+        instructionIndex,
+        message: name,
+        name,
+      };
     }
     if (code === 0 && kind && INIT_KINDS.has(kind)) {
       return {
-        instructionIndex,
-        code,
-        name: "AccountAlreadyInUse",
-        message: "The PDA already exists (System Program)",
         category: "replay",
+        code,
+        instructionIndex,
+        message: "The PDA already exists (System Program)",
+        name: "AccountAlreadyInUse",
       };
     }
     const name = TOKEN_ERRORS[code] ?? `CustomError(${code})`;
-    return { instructionIndex, code, name, message: name, category: "token" };
+    return { category: "token", code, instructionIndex, message: name, name };
   }
-  return { name: "Unknown", message: JSON.stringify(err), category: "unknown" };
+  return { category: "unknown", message: JSON.stringify(err), name: "Unknown" };
 }

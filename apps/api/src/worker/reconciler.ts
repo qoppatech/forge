@@ -1,5 +1,6 @@
 import {
   FORGE_PROGRAM_ADDRESS,
+  MEMO_PROGRAM_ADDRESS,
   decodeForgeInstruction,
   decodeLoanAccount,
   decodeTransactionError,
@@ -7,6 +8,7 @@ import {
   decodeWithdrawalAccount,
   intentSubject,
   intentsEqual,
+  parseOperationMemo,
   requiredSigners,
   toJsonSafe,
   type ForgeIntent,
@@ -70,9 +72,13 @@ export class Reconciler {
       WHERE address IN ${this.db([...vaultAddresses, NONE])}
          OR token_account IN ${this.db([...tokenAccounts, NONE])}`) as VaultRow[];
 
+    // Our attempt, by transaction id, exact message, or the operation memo (which survives a
+    // wallet adding instructions before broadcasting).
+    const memo = this.operationMemo(tx);
     const [matched] = (await this.db`
       SELECT id, operation_id FROM tx_attempts
       WHERE signature = ${signature} OR message_hash = ${tx.messageHash}
+         OR (operation_id = ${memo?.operationId ?? null}::uuid AND attempt_no = ${memo?.attemptNo ?? -1})
       ORDER BY (signature IS NOT DISTINCT FROM ${signature}) DESC LIMIT 1`) as MatchedAttempt[];
 
     if (vaults.length === 0 && !matched) {
@@ -83,6 +89,15 @@ export class Reconciler {
     return tx.err === null
       ? this.recordSuccess(tx, instructions, vaults, matched, snapshots)
       : this.recordFailure(tx, instructions, matched, snapshots);
+  }
+
+  private operationMemo(tx: ChainTransaction) {
+    for (const ix of tx.instructions) {
+      if (ix.programAddress !== MEMO_PROGRAM_ADDRESS || ix.innerIndex !== -1) continue;
+      const parsed = parseOperationMemo(new TextDecoder().decode(ix.data));
+      if (parsed) return parsed;
+    }
+    return undefined;
   }
 
   private forgeInstructions(tx: ChainTransaction): DecodedInstruction[] {
@@ -222,7 +237,7 @@ export class Reconciler {
             UPDATE tx_attempts SET status = 'landed_ok', confirmation = 'finalized',
               slot = ${tx.slot.toString()}, signature = coalesce(signature, ${tx.signature}), updated_at = now()
             WHERE operation_id = ${operationId}
-              AND (signature = ${tx.signature} OR message_hash = ${tx.messageHash})`;
+              AND (signature = ${tx.signature} OR message_hash = ${tx.messageHash} OR id = ${matched?.id ?? null})`;
         } else {
           operationId = await this.externalOperation(sql, tx, ix, vault);
         }

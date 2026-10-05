@@ -1,4 +1,5 @@
-import { address, type Address } from "@solana/kit";
+import { address } from "@solana/kit";
+import type { Address } from "@solana/kit";
 
 import forgeIdl from "./generated/forge.json" with { type: "json" };
 

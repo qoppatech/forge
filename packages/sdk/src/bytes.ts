@@ -18,7 +18,9 @@ export function hexToBytes(hex: string, expectedLength?: number): Uint8Array {
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
   return btoa(binary);
 }
 
@@ -32,7 +34,10 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 export async function sha256(data: Uint8Array | string): Promise<Uint8Array> {
-  const input = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+  const input =
+    typeof data === "string"
+      ? new TextEncoder().encode(data)
+      : new Uint8Array(data);
   return new Uint8Array(await crypto.subtle.digest("SHA-256", input));
 }
 

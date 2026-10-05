@@ -1,7 +1,9 @@
-import { AccountRole, address, type AccountMeta, type Address, type Instruction } from "@solana/kit";
+import { AccountRole, address } from "@solana/kit";
+import type { AccountMeta, Address, Instruction } from "@solana/kit";
 
 import { bytesToHex, hexToBytes } from "./bytes.js";
-import { decodeWithDiscriminator, encodeWithDiscriminator, type BorshValue } from "./codec.js";
+import { decodeWithDiscriminator, encodeWithDiscriminator } from "./codec.js";
+import type { BorshValue } from "./codec.js";
 import { FORGE_PROGRAM_ADDRESS, idlInstruction } from "./idl.js";
 
 /**
@@ -130,29 +132,61 @@ interface KindSpec {
 
 /** Mapping between intents and IDL instructions. `sdk.test.ts` fails if it drifts from the IDL. */
 export const INTENT_SPECS: Record<IntentKind, KindSpec> = {
+  approve_loan: {
+    accounts: { approver: "approver", loan: "loan", vault: "vault" },
+    args: {},
+    signers: ["approver"],
+    subject: "loan",
+  },
+  approve_withdrawal: {
+    accounts: {
+      approver: "approver",
+      mint: "mint",
+      treasury_destination: "treasuryDestination",
+      vault: "vault",
+      vault_token_account: "vaultTokenAccount",
+      withdrawal: "withdrawal",
+    },
+    args: {},
+    signers: ["approver"],
+    subject: "withdrawal",
+  },
   create_vault: {
     accounts: {
-      treasury: "treasury",
-      vault: "vault",
       mint: "mint",
-      vault_token_account: "vaultTokenAccount",
+      treasury: "treasury",
       treasury_destination: "treasuryDestination",
+      vault: "vault",
+      vault_token_account: "vaultTokenAccount",
     },
     args: {
-      vault_id: ["vaultId", "bytes32"],
       approvers: ["approvers", "pubkeys"],
-      per_loan_limit: ["perLoanLimit", "u64"],
       outstanding_limit: ["outstandingLimit", "u64"],
+      per_loan_limit: ["perLoanLimit", "u64"],
+      vault_id: ["vaultId", "bytes32"],
     },
     signers: ["treasury"],
     subject: "vault",
   },
+  draw_loan: {
+    accounts: {
+      borrower: "borrower",
+      destination: "destination",
+      loan: "loan",
+      mint: "mint",
+      vault: "vault",
+      vault_token_account: "vaultTokenAccount",
+    },
+    args: {},
+    signers: ["borrower"],
+    subject: "loan",
+  },
   fund_vault: {
     accounts: {
-      treasury: "treasury",
-      vault: "vault",
       mint: "mint",
       source: "source",
+      treasury: "treasury",
+      vault: "vault",
       vault_token_account: "vaultTokenAccount",
     },
     args: { amount: ["amount", "u64"] },
@@ -162,81 +196,57 @@ export const INTENT_SPECS: Record<IntentKind, KindSpec> = {
   propose_loan: {
     accounts: {
       approver: "approver",
-      vault: "vault",
-      loan: "loan",
       borrower: "borrower",
       destination: "destination",
+      loan: "loan",
       mint: "mint",
+      vault: "vault",
     },
     args: {
       loan_id: ["loanId", "bytes32"],
+      offer_expiry: ["offerExpiry", "i64"],
       principal: ["principal", "u64"],
       term_rate_bps: ["termRateBps", "u16"],
       term_seconds: ["termSeconds", "i64"],
-      offer_expiry: ["offerExpiry", "i64"],
     },
     signers: ["approver"],
-    subject: "loan",
-  },
-  approve_loan: {
-    accounts: { approver: "approver", vault: "vault", loan: "loan" },
-    args: {},
-    signers: ["approver"],
-    subject: "loan",
-  },
-  draw_loan: {
-    accounts: {
-      borrower: "borrower",
-      vault: "vault",
-      loan: "loan",
-      mint: "mint",
-      vault_token_account: "vaultTokenAccount",
-      destination: "destination",
-    },
-    args: {},
-    signers: ["borrower"],
-    subject: "loan",
-  },
-  repay_loan: {
-    accounts: {
-      borrower: "borrower",
-      vault: "vault",
-      loan: "loan",
-      mint: "mint",
-      borrower_tokens: "borrowerTokens",
-      vault_token_account: "vaultTokenAccount",
-    },
-    args: {},
-    signers: ["borrower"],
     subject: "loan",
   },
   propose_withdrawal: {
-    accounts: { approver: "approver", vault: "vault", withdrawal: "withdrawal" },
-    args: {
-      withdrawal_id: ["withdrawalId", "bytes32"],
-      amount: ["amount", "u64"],
-    },
-    signers: ["approver"],
-    subject: "withdrawal",
-  },
-  approve_withdrawal: {
     accounts: {
       approver: "approver",
       vault: "vault",
       withdrawal: "withdrawal",
-      mint: "mint",
-      vault_token_account: "vaultTokenAccount",
-      treasury_destination: "treasuryDestination",
     },
-    args: {},
+    args: {
+      amount: ["amount", "u64"],
+      withdrawal_id: ["withdrawalId", "bytes32"],
+    },
     signers: ["approver"],
     subject: "withdrawal",
   },
+  repay_loan: {
+    accounts: {
+      borrower: "borrower",
+      borrower_tokens: "borrowerTokens",
+      loan: "loan",
+      mint: "mint",
+      vault: "vault",
+      vault_token_account: "vaultTokenAccount",
+    },
+    args: {},
+    signers: ["borrower"],
+    subject: "loan",
+  },
   set_disbursement_paused: {
-    accounts: { approver_a: "approverA", approver_b: "approverB", vault: "vault" },
+    accounts: {
+      approver_a: "approverA",
+      approver_b: "approverB",
+      vault: "vault",
+    },
     args: {
-      paused: ["paused", "bool"],
       expected_seq: ["expectedSeq", "u64"],
+      paused: ["paused", "bool"],
     },
     signers: ["approverA", "approverB"],
     subject: "vault",
@@ -256,49 +266,67 @@ function field(intent: ForgeIntent, name: string): unknown {
   return (intent as unknown as Record<string, unknown>)[name];
 }
 
-function toBorsh(value: unknown, conversion: ArgConversion, name: string): BorshValue {
+function toBorsh(
+  value: unknown,
+  conversion: ArgConversion,
+  name: string
+): BorshValue {
   switch (conversion) {
     case "u64":
-    case "i64":
+    case "i64": {
       if (typeof value !== "string" || !/^-?\d+$/.test(value)) {
         throw new TypeError(`${name} must be an integer decimal string`);
       }
       return BigInt(value);
-    case "u16":
+    }
+    case "u16": {
       if (typeof value !== "number" || !Number.isInteger(value)) {
         throw new TypeError(`${name} must be an integer`);
       }
       return value;
-    case "bool":
-      if (typeof value !== "boolean") throw new TypeError(`${name} must be a boolean`);
+    }
+    case "bool": {
+      if (typeof value !== "boolean")
+        throw new TypeError(`${name} must be a boolean`);
       return value;
-    case "bytes32":
-      if (typeof value !== "string") throw new TypeError(`${name} must be 32-byte hex`);
+    }
+    case "bytes32": {
+      if (typeof value !== "string")
+        throw new TypeError(`${name} must be 32-byte hex`);
       return hexToBytes(value, 32);
-    case "pubkeys":
-      if (!Array.isArray(value)) throw new TypeError(`${name} must be an address list`);
+    }
+    case "pubkeys": {
+      if (!Array.isArray(value))
+        throw new TypeError(`${name} must be an address list`);
       return value.map((item) => address(String(item)));
+    }
   }
 }
 
 function fromBorsh(value: BorshValue, conversion: ArgConversion): unknown {
   switch (conversion) {
     case "u64":
-    case "i64":
+    case "i64": {
       return String(value);
+    }
     case "u16":
-    case "bool":
+    case "bool": {
       return value;
-    case "bytes32":
+    }
+    case "bytes32": {
       return bytesToHex(value as Uint8Array);
-    case "pubkeys":
+    }
+    case "pubkeys": {
       return (value as BorshValue[]).map(String);
+    }
   }
 }
 
 /** Required signers for an intent, fee payer first. */
 export function requiredSigners(intent: ForgeIntent): string[] {
-  return INTENT_SPECS[intent.kind].signers.map((name) => String(field(intent, name)));
+  return INTENT_SPECS[intent.kind].signers.map((name) =>
+    String(field(intent, name))
+  );
 }
 
 /** The account the operation acts on (vault, loan or withdrawal). */
@@ -312,7 +340,8 @@ export function buildForgeInstruction(intent: ForgeIntent): Instruction {
   const ix = idlInstruction(intent.kind);
   const accounts: AccountMeta[] = ix.accounts.map((account) => {
     const fieldName = spec.accounts[account.name];
-    const value = account.address ?? (fieldName ? field(intent, fieldName) : undefined);
+    const value =
+      account.address ?? (fieldName ? field(intent, fieldName) : undefined);
     if (typeof value !== "string") {
       throw new TypeError(`${intent.kind}: missing account ${account.name}`);
     }
@@ -325,17 +354,19 @@ export function buildForgeInstruction(intent: ForgeIntent): Instruction {
         : AccountRole.READONLY;
     return { address: address(value), role };
   });
-  const args: { [key: string]: BorshValue } = {};
+  const args: Record<string, BorshValue> = {};
   for (const arg of ix.args) {
     const mapping = spec.args[arg.name];
-    if (!mapping) throw new Error(`${intent.kind}: no mapping for argument ${arg.name}`);
+    if (!mapping) {
+      throw new Error(`${intent.kind}: no mapping for argument ${arg.name}`);
+    }
     const [fieldName, conversion] = mapping;
     args[arg.name] = toBorsh(field(intent, fieldName), conversion, fieldName);
   }
   return {
-    programAddress: FORGE_PROGRAM_ADDRESS,
     accounts,
     data: encodeWithDiscriminator(ix.discriminator, ix.args, args),
+    programAddress: FORGE_PROGRAM_ADDRESS,
   };
 }
 
@@ -349,14 +380,25 @@ export interface RawInstruction {
  * Decodes a Forge instruction back into its intent. Returns undefined for other programs and
  * throws for Forge data that matches no IDL instruction or uses a non-canonical fixed account.
  */
-export function decodeForgeInstruction(instruction: RawInstruction): ForgeIntent | undefined {
-  if (instruction.programAddress !== FORGE_PROGRAM_ADDRESS) return undefined;
+export function decodeForgeInstruction(
+  instruction: RawInstruction
+): ForgeIntent | undefined {
+  if (instruction.programAddress !== FORGE_PROGRAM_ADDRESS) {
+    return undefined;
+  }
   for (const kind of INTENT_KINDS) {
     const ix = idlInstruction(kind);
-    const args = decodeWithDiscriminator(ix.discriminator, ix.args, instruction.data, {
-      exact: true,
-    });
-    if (!args) continue;
+    const args = decodeWithDiscriminator(
+      ix.discriminator,
+      ix.args,
+      instruction.data,
+      {
+        exact: true,
+      }
+    );
+    if (!args) {
+      continue;
+    }
     if (instruction.accounts.length < ix.accounts.length) {
       throw new Error(`${kind}: expected ${ix.accounts.length} accounts`);
     }
@@ -368,11 +410,17 @@ export function decodeForgeInstruction(instruction: RawInstruction): ForgeIntent
         throw new Error(`${kind}: ${account.name} must be ${account.address}`);
       }
       const fieldName = spec.accounts[account.name];
-      if (fieldName) intent[fieldName] = actual;
+      if (fieldName) {
+        intent[fieldName] = actual;
+      }
     });
-    for (const [argName, [fieldName, conversion]] of Object.entries(spec.args)) {
+    for (const [argName, [fieldName, conversion]] of Object.entries(
+      spec.args
+    )) {
       const value = args[argName];
-      if (value === undefined) throw new Error(`${kind}: missing argument ${argName}`);
+      if (value === undefined) {
+        throw new Error(`${kind}: missing argument ${argName}`);
+      }
       intent[fieldName] = fromBorsh(value, conversion);
     }
     return intent as unknown as ForgeIntent;

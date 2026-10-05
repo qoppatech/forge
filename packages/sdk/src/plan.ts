@@ -14,11 +14,13 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   verifySignature,
-  type Address,
-  type Blockhash,
-  type Instruction,
-  type SignatureBytes,
-  type Transaction,
+} from "@solana/kit";
+import type {
+  Address,
+  Blockhash,
+  Instruction,
+  SignatureBytes,
+  Transaction,
 } from "@solana/kit";
 
 import { base64ToBytes, bytesEqual, sha256Hex } from "./bytes.js";
@@ -27,9 +29,28 @@ import {
   buildForgeInstruction,
   decodeForgeInstruction,
   requiredSigners,
-  type ForgeIntent,
 } from "./intents.js";
+import type { ForgeIntent } from "./intents.js";
 import { intentsEqual } from "./json.js";
+
+/** SPL Memo v2. Plans carry `forge:op:<operationId>:<attemptNo>` so every attempt's message is
+ *  unique (identical messages share one transaction id) and traceable to its operation. */
+export const MEMO_PROGRAM_ADDRESS = address(
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+);
+
+export function operationMemo(operationId: string, attemptNo: number): string {
+  return `forge:op:${operationId}:${attemptNo}`;
+}
+
+export function parseOperationMemo(
+  memo: string
+): { operationId: string; attemptNo: number } | undefined {
+  const match = /^forge:op:([0-9a-f-]{36}):(\d+)$/.exec(memo);
+  return match
+    ? { attemptNo: Number(match[2]), operationId: match[1]! }
+    : undefined;
+}
 
 export interface BlockhashLifetime {
   blockhash: string;
@@ -51,18 +72,26 @@ export interface TransactionPlan {
   /** Unsigned wire transaction (empty signature slots), base64. */
   transaction: string;
   messageHash: string;
+  /** Operation reference memo preceding the Forge instruction, if any. */
+  memo: string | null;
   blockhash: string;
   lastValidBlockHeight: string;
 }
 
-/** Compiles the single-instruction v0 transaction for an intent. Fee payer = first signer. */
+/**
+ * Compiles the v0 transaction for an intent: an optional operation memo followed by exactly
+ * one Forge instruction. Fee payer = first required signer.
+ */
 export function compileIntentTransaction(
   intent: ForgeIntent,
   lifetime: BlockhashLifetime,
+  options: { memo?: string } = {}
 ): Transaction {
   const signers = requiredSigners(intent);
   const feePayer = signers[0];
-  if (!feePayer) throw new Error("Intent has no signer");
+  if (!feePayer) {
+    throw new Error("Intent has no signer");
+  }
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(address(feePayer), m),
@@ -72,9 +101,19 @@ export function compileIntentTransaction(
           blockhash: lifetime.blockhash as Blockhash,
           lastValidBlockHeight: lifetime.lastValidBlockHeight,
         },
-        m,
+        m
       ),
-    (m) => appendTransactionMessageInstruction(buildForgeInstruction(intent), m),
+    (m) =>
+      options.memo
+        ? appendTransactionMessageInstruction(
+            {
+              data: new TextEncoder().encode(options.memo),
+              programAddress: MEMO_PROGRAM_ADDRESS,
+            },
+            m
+          )
+        : m,
+    (m) => appendTransactionMessageInstruction(buildForgeInstruction(intent), m)
   );
   return compileTransaction(message);
 }
@@ -95,31 +134,48 @@ export interface InspectedTransaction {
   feePayer: string;
   blockhash: string;
   signers: string[];
-  instructions: { programAddress: string; accounts: string[]; intent?: ForgeIntent }[];
+  instructions: {
+    programAddress: string;
+    accounts: string[];
+    intent?: ForgeIntent;
+    memo?: string;
+  }[];
 }
 
 /** Decodes a transaction's message into instructions and Forge intents. */
-export function inspectTransaction(transaction: Transaction): InspectedTransaction {
-  const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
+export function inspectTransaction(
+  transaction: Transaction
+): InspectedTransaction {
+  const compiled = getCompiledTransactionMessageDecoder().decode(
+    transaction.messageBytes
+  );
   const message = decompileTransactionMessage(compiled);
   const blockhash =
-    "blockhash" in message.lifetimeConstraint ? message.lifetimeConstraint.blockhash : "";
+    "blockhash" in message.lifetimeConstraint
+      ? message.lifetimeConstraint.blockhash
+      : "";
   return {
-    feePayer: message.feePayer.address,
     blockhash,
+    feePayer: message.feePayer.address,
+    instructions: (message.instructions as readonly Instruction[]).map(
+      (ix) => ({
+        programAddress: ix.programAddress,
+        accounts: (ix.accounts ?? []).map((a) => a.address),
+        intent:
+          ix.programAddress === FORGE_PROGRAM_ADDRESS
+            ? decodeForgeInstruction({
+                programAddress: ix.programAddress,
+                accounts: ix.accounts ?? [],
+                data: new Uint8Array(ix.data ?? []),
+              })
+            : undefined,
+        memo:
+          ix.programAddress === MEMO_PROGRAM_ADDRESS
+            ? new TextDecoder().decode(new Uint8Array(ix.data ?? []))
+            : undefined,
+      })
+    ),
     signers: Object.keys(transaction.signatures),
-    instructions: (message.instructions as readonly Instruction[]).map((ix) => ({
-      programAddress: ix.programAddress,
-      accounts: (ix.accounts ?? []).map((a) => a.address),
-      intent:
-        ix.programAddress === FORGE_PROGRAM_ADDRESS
-          ? decodeForgeInstruction({
-              programAddress: ix.programAddress,
-              accounts: ix.accounts ?? [],
-              data: new Uint8Array(ix.data ?? []),
-            })
-          : undefined,
-    })),
   };
 }
 
@@ -129,8 +185,13 @@ export function inspectTransaction(transaction: Transaction): InspectedTransacti
  * empty list means the bytes match the intent the signer agreed to.
  */
 export async function verifyPlan(
-  plan: Pick<TransactionPlan, "intent" | "transaction" | "messageHash" | "requiredSigners">,
-  expectedIntent: ForgeIntent = plan.intent,
+  plan: Pick<
+    TransactionPlan,
+    "intent" | "transaction" | "messageHash" | "requiredSigners"
+  > & {
+    memo?: string | null;
+  },
+  expectedIntent: ForgeIntent = plan.intent
 ): Promise<string[]> {
   const problems: string[] = [];
   let transaction: Transaction;
@@ -141,10 +202,20 @@ export async function verifyPlan(
   } catch (error) {
     return [`Transaction does not decode: ${(error as Error).message}`];
   }
-  if (inspected.instructions.length !== 1) {
-    problems.push(`Expected 1 instruction, found ${inspected.instructions.length}`);
+  const instructions = [...inspected.instructions];
+  if (plan.memo) {
+    const memo = instructions.shift();
+    if (
+      memo?.programAddress !== MEMO_PROGRAM_ADDRESS ||
+      memo.memo !== plan.memo
+    ) {
+      problems.push("Operation memo is missing or differs from the plan");
+    }
   }
-  const [only] = inspected.instructions;
+  if (instructions.length !== 1) {
+    problems.push(`Expected 1 instruction, found ${instructions.length}`);
+  }
+  const [only] = instructions;
   if (only?.programAddress !== FORGE_PROGRAM_ADDRESS) {
     problems.push(`Instruction targets ${only?.programAddress}, not Forge`);
   }
@@ -155,7 +226,9 @@ export async function verifyPlan(
     problems.push("Plan intent differs from the requested intent");
   }
   const signers = requiredSigners(expectedIntent);
-  if (inspected.feePayer !== signers[0]) problems.push("Unexpected fee payer");
+  if (inspected.feePayer !== signers[0]) {
+    problems.push("Unexpected fee payer");
+  }
   if (!intentsEqual([...inspected.signers].sort(), [...signers].sort())) {
     problems.push("Signer set differs from the intent's required signers");
   }
@@ -168,15 +241,23 @@ export async function verifyPlan(
 /** Signs locally with the given key pairs; other signature slots are preserved. */
 export async function signPlanTransaction(
   base64: string,
-  keyPairs: CryptoKeyPair[],
+  keyPairs: CryptoKeyPair[]
 ): Promise<string> {
-  const signed = await partiallySignTransaction(keyPairs, decodeWireTransaction(base64));
+  const signed = await partiallySignTransaction(
+    keyPairs,
+    decodeWireTransaction(base64)
+  );
   return encodeWireTransaction(signed);
 }
 
-export type SignatureCheck = { signer: string; status: "valid" | "missing" | "invalid" };
+export interface SignatureCheck {
+  signer: string;
+  status: "valid" | "missing" | "invalid";
+}
 
-export async function checkSignatures(transaction: Transaction): Promise<SignatureCheck[]> {
+export async function checkSignatures(
+  transaction: Transaction
+): Promise<SignatureCheck[]> {
   const checks: SignatureCheck[] = [];
   for (const [signer, signature] of Object.entries(transaction.signatures)) {
     if (!signature) {
@@ -184,7 +265,11 @@ export async function checkSignatures(transaction: Transaction): Promise<Signatu
       continue;
     }
     const key = await getPublicKeyFromAddress(signer as Address);
-    const valid = await verifySignature(key, signature, transaction.messageBytes);
+    const valid = await verifySignature(
+      key,
+      signature,
+      transaction.messageBytes
+    );
     checks.push({ signer, status: valid ? "valid" : "invalid" });
   }
   return checks;
@@ -196,25 +281,41 @@ export async function checkSignatures(transaction: Transaction): Promise<Signatu
  */
 export async function mergeSignatures(
   stored: Transaction,
-  submitted: Transaction,
+  submitted: Transaction
 ): Promise<{ transaction: Transaction; added: string[] }> {
-  if (!bytesEqual(new Uint8Array(stored.messageBytes), new Uint8Array(submitted.messageBytes))) {
+  if (
+    !bytesEqual(
+      new Uint8Array(stored.messageBytes),
+      new Uint8Array(submitted.messageBytes)
+    )
+  ) {
     throw new Error("Submitted message differs from the prepared message");
   }
   const checks = await checkSignatures(submitted);
   const invalid = checks.filter((c) => c.status === "invalid");
   if (invalid.length > 0) {
-    throw new Error(`Invalid signature from ${invalid.map((c) => c.signer).join(", ")}`);
+    throw new Error(
+      `Invalid signature from ${invalid.map((c) => c.signer).join(", ")}`
+    );
   }
-  const signatures: Record<string, SignatureBytes | null> = { ...stored.signatures };
+  const signatures: Record<string, SignatureBytes | null> = {
+    ...stored.signatures,
+  };
   const added: string[] = [];
   for (const check of checks) {
-    if (check.status !== "valid") continue;
-    if (!(check.signer in signatures)) throw new Error(`Unexpected signer ${check.signer}`);
-    if (!signatures[check.signer]) added.push(check.signer);
-    signatures[check.signer] = submitted.signatures[check.signer as Address] ?? null;
+    if (check.status !== "valid") {
+      continue;
+    }
+    if (!(check.signer in signatures)) {
+      throw new Error(`Unexpected signer ${check.signer}`);
+    }
+    if (!signatures[check.signer]) {
+      added.push(check.signer);
+    }
+    signatures[check.signer] =
+      submitted.signatures[check.signer as Address] ?? null;
   }
-  return { transaction: { ...stored, signatures } as Transaction, added };
+  return { added, transaction: { ...stored, signatures } as Transaction };
 }
 
 export function isFullySigned(transaction: Transaction): boolean {
@@ -225,4 +326,3 @@ export function isFullySigned(transaction: Transaction): boolean {
 export function transactionSignature(transaction: Transaction): string {
   return getSignatureFromTransaction(transaction);
 }
-

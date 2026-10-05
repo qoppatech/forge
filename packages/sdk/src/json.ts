@@ -2,12 +2,21 @@ import { bytesToHex } from "./bytes.js";
 
 /** Converts bigint → decimal string and bytes → hex so values survive JSON and jsonb. */
 export function toJsonSafe(value: unknown): unknown {
-  if (typeof value === "bigint") return value.toString();
-  if (value instanceof Uint8Array) return bytesToHex(value);
-  if (Array.isArray(value)) return value.map(toJsonSafe);
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (value instanceof Uint8Array) {
+    return bytesToHex(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(toJsonSafe);
+  }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, toJsonSafe(v)]),
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+        k,
+        toJsonSafe(v),
+      ])
     );
   }
   return value;
@@ -17,7 +26,9 @@ export function toJsonSafe(value: unknown): unknown {
 export function stableStringify(value: unknown): string {
   const safe = toJsonSafe(value);
   const walk = (v: unknown): string => {
-    if (Array.isArray(v)) return `[${v.map(walk).join(",")}]`;
+    if (Array.isArray(v)) {
+      return `[${v.map(walk).join(",")}]`;
+    }
     if (v && typeof v === "object") {
       const entries = Object.entries(v as Record<string, unknown>)
         .filter(([, item]) => item !== undefined)
