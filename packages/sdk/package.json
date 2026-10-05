@@ -41,5 +41,8 @@
         ]
       }
     }
+  },
+  "dependencies": {
+    "@solana/kit": "8.4.0"
   }
 }
