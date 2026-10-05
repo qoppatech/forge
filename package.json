@@ -21,7 +21,9 @@
     "dev:site": "nx dev @forge/site",
     "check": "ultracite check apps/site packages *.json *.jsonc *.ts",
     "fix": "ultracite fix apps/site packages *.json *.jsonc *.ts",
-    "dev:api": "nx dev @forge/api"
+    "dev:api": "nx dev @forge/api",
+    "dev:console": "nx dev @forge/console",
+    "e2e": "bun run --cwd packages/sdk build && bun apps/localnet/src/e2e.ts"
   },
   "dependencies": {
     "zod": "catalog:"

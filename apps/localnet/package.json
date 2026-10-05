@@ -1,0 +1,29 @@
+{
+  "name": "@forge/localnet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "bun src/seed.ts",
+    "e2e": "bun src/e2e.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@forge/sdk": "workspace:*",
+    "@solana-program/system": "0.15.0",
+    "@solana-program/token": "0.17.0",
+    "@solana/kit": "8.4.0"
+  },
+  "devDependencies": {
+    "@forge/config": "workspace:*",
+    "@types/bun": "^1.3.13",
+    "typescript": "^6.0.3"
+  },
+  "nx": {
+    "targets": {
+      "check-types": {
+        "dependsOn": ["^build"]
+      }
+    }
+  }
+}
