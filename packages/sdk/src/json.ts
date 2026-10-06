@@ -1,9 +1,15 @@
 import { bytesToHex } from "./bytes.js";
 
-/** Converts bigint → decimal string and bytes → hex so values survive JSON and jsonb. */
+/**
+ * Converts bigint → decimal string, bytes → hex and Date → ISO-8601 so values survive JSON and
+ * jsonb (a Date has no own enumerable keys and would otherwise become `{}`).
+ */
 export function toJsonSafe(value: unknown): unknown {
   if (typeof value === "bigint") {
     return value.toString();
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
   }
   if (value instanceof Uint8Array) {
     return bytesToHex(value);

@@ -536,6 +536,17 @@ describe("errors, accounts and views", () => {
     expect(sdk.formatTokenAmount(10_100_000_000n)).toBe("10,100.000000");
   });
 
+  test("JSON-safe conversion keeps bigints, bytes and timestamps", () => {
+    const at = new Date("2026-10-05T12:00:00.000Z");
+    expect(
+      sdk.toJsonSafe({ at, bytes: new Uint8Array([1, 255]), n: 2n ** 64n - 1n })
+    ).toEqual({
+      at: "2026-10-05T12:00:00.000Z",
+      bytes: "01ff",
+      n: "18446744073709551615",
+    });
+  });
+
   test("on-chain ids are deterministic per scope and reference", async () => {
     const a = await sdk.deriveOnchainId("loan", "vault-1", "LN-1");
     expect(a).toHaveLength(64);

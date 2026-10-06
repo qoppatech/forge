@@ -119,6 +119,8 @@ describe("API boundary (#4)", () => {
     const created = await h.api("POST", "/v1/vaults", vaultBody(h));
     const op = created.body;
     expect(op.status).toBe("prepared");
+    // Timestamps serialize as ISO-8601, not as empty objects.
+    expect(Number.isNaN(Date.parse(op.createdAt))).toBe(false);
     expect(op.plan.requiredSigners).toEqual([h.roles.treasury.address]);
     expect(op.plan.feePayer).toBe(h.roles.treasury.address);
     expect(await verifyPlan(op.plan)).toEqual([]);
