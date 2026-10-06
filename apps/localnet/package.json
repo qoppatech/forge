@@ -22,7 +22,9 @@
   "nx": {
     "targets": {
       "check-types": {
-        "dependsOn": ["^build"]
+        "dependsOn": [
+          "^build"
+        ]
       }
     }
   }

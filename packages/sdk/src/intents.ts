@@ -271,10 +271,11 @@ function toBorsh(
   conversion: ArgConversion,
   name: string
 ): BorshValue {
+  // oxlint-disable-next-line default-case -- exhaustive over ArgConversion; TS enforces it and a default would change the result for unknown conversions
   switch (conversion) {
     case "u64":
     case "i64": {
-      if (typeof value !== "string" || !/^-?\d+$/.test(value)) {
+      if (typeof value !== "string" || !/^-?\d+$/u.test(value)) {
         throw new TypeError(`${name} must be an integer decimal string`);
       }
       return BigInt(value);
@@ -286,24 +287,28 @@ function toBorsh(
       return value;
     }
     case "bool": {
-      if (typeof value !== "boolean")
+      if (typeof value !== "boolean") {
         throw new TypeError(`${name} must be a boolean`);
+      }
       return value;
     }
     case "bytes32": {
-      if (typeof value !== "string")
+      if (typeof value !== "string") {
         throw new TypeError(`${name} must be 32-byte hex`);
+      }
       return hexToBytes(value, 32);
     }
     case "pubkeys": {
-      if (!Array.isArray(value))
+      if (!Array.isArray(value)) {
         throw new TypeError(`${name} must be an address list`);
+      }
       return value.map((item) => address(String(item)));
     }
   }
 }
 
 function fromBorsh(value: BorshValue, conversion: ArgConversion): unknown {
+  // oxlint-disable-next-line default-case -- exhaustive over ArgConversion; a default would change the result for unknown conversions
   switch (conversion) {
     case "u64":
     case "i64": {
@@ -334,6 +339,18 @@ export function intentSubject(intent: ForgeIntent): string {
   return String(field(intent, INTENT_SPECS[intent.kind].subject));
 }
 
+function accountRole(account: {
+  signer?: boolean;
+  writable?: boolean;
+}): AccountRole {
+  if (account.signer) {
+    return account.writable
+      ? AccountRole.WRITABLE_SIGNER
+      : AccountRole.READONLY_SIGNER;
+  }
+  return account.writable ? AccountRole.WRITABLE : AccountRole.READONLY;
+}
+
 /** Builds the Forge instruction for an intent with IDL-ordered accounts and IDL roles. */
 export function buildForgeInstruction(intent: ForgeIntent): Instruction {
   const spec = INTENT_SPECS[intent.kind];
@@ -345,14 +362,7 @@ export function buildForgeInstruction(intent: ForgeIntent): Instruction {
     if (typeof value !== "string") {
       throw new TypeError(`${intent.kind}: missing account ${account.name}`);
     }
-    const role = account.signer
-      ? account.writable
-        ? AccountRole.WRITABLE_SIGNER
-        : AccountRole.READONLY_SIGNER
-      : account.writable
-        ? AccountRole.WRITABLE
-        : AccountRole.READONLY;
-    return { address: address(value), role };
+    return { address: address(value), role: accountRole(account) };
   });
   const args: Record<string, BorshValue> = {};
   for (const arg of ix.args) {
@@ -404,7 +414,7 @@ export function decodeForgeInstruction(
     }
     const spec = INTENT_SPECS[kind];
     const intent: Record<string, unknown> = { kind };
-    ix.accounts.forEach((account, index) => {
+    for (const [index, account] of ix.accounts.entries()) {
       const actual = String(instruction.accounts[index]?.address);
       if (account.address && account.address !== actual) {
         throw new Error(`${kind}: ${account.name} must be ${account.address}`);
@@ -413,7 +423,7 @@ export function decodeForgeInstruction(
       if (fieldName) {
         intent[fieldName] = actual;
       }
-    });
+    }
     for (const [argName, [fieldName, conversion]] of Object.entries(
       spec.args
     )) {

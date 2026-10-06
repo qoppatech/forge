@@ -1,6 +1,7 @@
-import { SQL } from "bun";
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import path from "node:path";
+
+import { SQL } from "bun";
 
 export type Db = SQL;
 
@@ -8,7 +9,7 @@ export function connect(url: string): Db {
   return new SQL(url, { max: 10 });
 }
 
-const MIGRATIONS = join(import.meta.dir, "..", "migrations");
+const MIGRATIONS = path.join(import.meta.dir, "..", "migrations");
 
 /** Applies pending `migrations/*.sql` files in order, each in its own transaction. */
 export async function migrate(db: Db): Promise<string[]> {
@@ -16,14 +17,18 @@ export async function migrate(db: Db): Promise<string[]> {
     version text PRIMARY KEY,
     applied_at timestamptz NOT NULL DEFAULT now()
   )`;
-  const applied = new Set(
-    (await db`SELECT version FROM schema_migrations`).map((r: { version: string }) => r.version),
-  );
-  const files = (await readdir(MIGRATIONS)).filter((f) => f.endsWith(".sql")).sort();
+  const versions = await db`SELECT version FROM schema_migrations`;
+  const applied = new Set(versions.map((r: { version: string }) => r.version));
+  const entries = await readdir(MIGRATIONS);
+  const files = entries.filter((f) => f.endsWith(".sql")).toSorted();
   const ran: string[] = [];
   for (const file of files) {
-    if (applied.has(file)) continue;
-    const text = await Bun.file(join(MIGRATIONS, file)).text();
+    if (applied.has(file)) {
+      continue;
+    }
+    // oxlint-disable-next-line no-await-in-loop -- migrations apply one at a time, in filename order
+    const text = await Bun.file(path.join(MIGRATIONS, file)).text();
+    // oxlint-disable-next-line no-await-in-loop -- each migration commits before the next one is read
     await db.begin(async (tx) => {
       await tx.unsafe(text);
       await tx`INSERT INTO schema_migrations (version) VALUES (${file})`;

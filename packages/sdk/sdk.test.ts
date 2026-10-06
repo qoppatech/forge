@@ -10,9 +10,11 @@ import {
 } from "@solana/kit";
 import type { Transaction } from "@solana/kit";
 
+import type * as Sdk from "./src/index.js";
+
 const root = new URL("../../", import.meta.url);
 const entry = new URL("dist/index.js", import.meta.url);
-const sdk = (await import(entry.href)) as typeof import("./src/index.js");
+const sdk = (await import(entry.href)) as typeof Sdk;
 const artifact = await Bun.file(new URL("target/idl/forge.json", root)).json();
 
 const BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
@@ -23,11 +25,29 @@ async function newAddress() {
   return { address: await getAddressFromPublicKey(pair.publicKey), pair };
 }
 
+/** Narrows away `undefined`, failing the test instead of passing it through. */
+function defined<T>(value: T | undefined): T {
+  if (value === undefined) {
+    throw new Error("Expected a value, got undefined");
+  }
+  return value;
+}
+
+const customError = (code: number | bigint) => ({
+  InstructionError: [0, { Custom: code }],
+});
+
 async function sampleIntents() {
   const keys = await Promise.all(Array.from({ length: 10 }, newAddress));
-  const [treasury, a, b, borrower, mint, source, dest, tdest] = keys.map(
-    (k) => k.address
-  ) as string[];
+  const addressAt = (index: number) => defined(keys[index]).address;
+  const treasury = addressAt(0);
+  const a = addressAt(1);
+  const b = addressAt(2);
+  const borrower = addressAt(3);
+  const mint = addressAt(4);
+  const source = addressAt(5);
+  const dest = addressAt(6);
+  const tdest = addressAt(7);
   const vaultId = await sdk.deriveOnchainId("vault", "inst-1", "main");
   const vault = await sdk.findVaultAddress(treasury as never, vaultId);
   const tokens = await sdk.findVaultTokenAddress(vault);
@@ -35,15 +55,15 @@ async function sampleIntents() {
   const loan = await sdk.findLoanAddress(vault, loanId);
   const withdrawalId = await sdk.deriveOnchainId("withdrawal", vault, "WD-1");
   const withdrawal = await sdk.findWithdrawalAddress(vault, withdrawalId);
-  const intents: import("./src/index.js").ForgeIntent[] = [
+  const intents: Sdk.ForgeIntent[] = [
     {
-      approvers: [a!, b!],
+      approvers: [a, b],
       kind: "create_vault",
-      mint: mint!,
+      mint,
       outstandingLimit: "10000000000",
       perLoanLimit: "5000000000",
-      treasury: treasury!,
-      treasuryDestination: tdest!,
+      treasury,
+      treasuryDestination: tdest,
       vault,
       vaultId,
       vaultTokenAccount: tokens,
@@ -51,65 +71,65 @@ async function sampleIntents() {
     {
       amount: "10000000000",
       kind: "fund_vault",
-      mint: mint!,
-      source: source!,
-      treasury: treasury!,
+      mint,
+      source,
+      treasury,
       vault,
       vaultTokenAccount: tokens,
     },
     {
-      approver: a!,
-      borrower: borrower!,
-      destination: dest!,
+      approver: a,
+      borrower,
+      destination: dest,
       kind: "propose_loan",
       loan,
       loanId,
-      mint: mint!,
+      mint,
       offerExpiry: "1900000000",
       principal: "5000000000",
       termRateBps: 200,
       termSeconds: "2592000",
       vault,
     },
-    { approver: b!, kind: "approve_loan", loan, vault },
+    { approver: b, kind: "approve_loan", loan, vault },
     {
-      borrower: borrower!,
-      destination: dest!,
+      borrower,
+      destination: dest,
       kind: "draw_loan",
       loan,
-      mint: mint!,
+      mint,
       vault,
       vaultTokenAccount: tokens,
     },
     {
-      borrower: borrower!,
-      borrowerTokens: dest!,
+      borrower,
+      borrowerTokens: dest,
       kind: "repay_loan",
       loan,
-      mint: mint!,
+      mint,
       vault,
       vaultTokenAccount: tokens,
     },
     {
       amount: "100000000",
-      approver: a!,
+      approver: a,
       kind: "propose_withdrawal",
       vault,
       withdrawal,
       withdrawalId,
     },
     {
-      approver: b!,
+      approver: b,
       kind: "approve_withdrawal",
-      mint: mint!,
-      treasuryDestination: tdest!,
+      mint,
+      treasuryDestination: tdest,
       vault,
       vaultTokenAccount: tokens,
       withdrawal,
     },
     {
-      approverA: a!,
-      approverB: b!,
+      approverA: a,
+      approverB: b,
       expectedSeq: "3",
       kind: "set_disbursement_paused",
       paused: true,
@@ -120,7 +140,7 @@ async function sampleIntents() {
 }
 
 describe("IDL packaging and drift", () => {
-  test("packaged IDL equals the built program IDL", async () => {
+  test("packaged IDL equals the built program IDL", () => {
     expect(sdk.forgeIdl).toEqual(artifact);
     expect(sdk.FORGE_PROGRAM_ID).toBe(artifact.address);
     expect(sdk.FORGE_PROGRAM_ADDRESS).toBe(artifact.address);
@@ -129,21 +149,23 @@ describe("IDL packaging and drift", () => {
   test("every IDL instruction has exactly one intent mapping covering all accounts and args", () => {
     const names = artifact.instructions
       .map((ix: { name: string }) => ix.name)
-      .sort();
-    expect([...sdk.INTENT_KINDS].sort()).toEqual(names);
+      .toSorted();
+    expect(sdk.INTENT_KINDS.toSorted()).toEqual(names);
     for (const ix of artifact.instructions) {
       const spec = sdk.INTENT_SPECS[ix.name as keyof typeof sdk.INTENT_SPECS];
       const variable = ix.accounts
         .filter((a: { address?: string }) => !a.address)
         .map((a: { name: string }) => a.name);
-      expect(Object.keys(spec.accounts).sort()).toEqual(variable.sort());
-      expect(Object.keys(spec.args).sort()).toEqual(
-        ix.args.map((a: { name: string }) => a.name).sort()
+      expect(Object.keys(spec.accounts).toSorted()).toEqual(
+        variable.toSorted()
+      );
+      expect(Object.keys(spec.args).toSorted()).toEqual(
+        ix.args.map((a: { name: string }) => a.name).toSorted()
       );
       for (const signer of ix.accounts.filter(
         (a: { signer?: boolean }) => a.signer
       )) {
-        expect(spec.signers).toContain(spec.accounts[signer.name]!);
+        expect(spec.signers).toContain(defined(spec.accounts[signer.name]));
       }
     }
   });
@@ -154,7 +176,7 @@ describe("IDL packaging and drift", () => {
       for (const account of ix.accounts) {
         const first = account.pda?.seeds?.[0];
         if (first?.kind === "const") {
-          prefixes.set(account.name, String.fromCharCode(...first.value));
+          prefixes.set(account.name, String.fromCodePoint(...first.value));
         }
       }
     }
@@ -173,8 +195,10 @@ describe("instruction codec", () => {
       const idlIx = artifact.instructions.find(
         (i: { name: string }) => i.name === intent.kind
       );
-      expect([...ix.data!.slice(0, 8)]).toEqual(idlIx.discriminator);
-      ix.accounts!.forEach((meta, i) => {
+      const data = defined(ix.data);
+      const accounts = defined(ix.accounts);
+      expect([...data.subarray(0, 8)]).toEqual(idlIx.discriminator);
+      for (const [i, meta] of accounts.entries()) {
         const expected = idlIx.accounts[i];
         const signer =
           meta.role === AccountRole.READONLY_SIGNER ||
@@ -187,10 +211,10 @@ describe("instruction codec", () => {
         if (expected.address) {
           expect(meta.address).toBe(expected.address);
         }
-      });
+      }
       const decoded = sdk.decodeForgeInstruction({
-        accounts: ix.accounts!,
-        data: new Uint8Array(ix.data!),
+        accounts,
+        data: new Uint8Array(data),
         programAddress: ix.programAddress,
       });
       expect(sdk.intentsEqual(decoded, intent)).toBe(true);
@@ -199,7 +223,7 @@ describe("instruction codec", () => {
 
   test("out-of-range and malformed values are rejected rather than mis-encoded", async () => {
     const { intents } = await sampleIntents();
-    const fund = intents[1] as import("./src/index.js").FundVaultIntent;
+    const fund = intents[1] as Sdk.FundVaultIntent;
     expect(() =>
       sdk.buildForgeInstruction({ ...fund, amount: "18446744073709551616" })
     ).toThrow();
@@ -209,7 +233,7 @@ describe("instruction codec", () => {
     expect(() =>
       sdk.buildForgeInstruction({ ...fund, amount: "1.5" })
     ).toThrow();
-    const vault = intents[0] as import("./src/index.js").CreateVaultIntent;
+    const vault = intents[0] as Sdk.CreateVaultIntent;
     expect(() =>
       sdk.buildForgeInstruction({ ...vault, vaultId: "abcd" })
     ).toThrow();
@@ -217,13 +241,12 @@ describe("instruction codec", () => {
 
   test("required signers put the fee payer first; pause needs both approvers", async () => {
     const { intents } = await sampleIntents();
-    const pause =
-      intents[8] as import("./src/index.js").SetDisbursementPausedIntent;
+    const pause = intents[8] as Sdk.SetDisbursementPausedIntent;
     expect(sdk.requiredSigners(pause)).toEqual([
       pause.approverA,
       pause.approverB,
     ]);
-    expect(sdk.intentSubject(intents[2]!)).toBe(
+    expect(sdk.intentSubject(defined(intents[2]))).toBe(
       (intents[2] as { loan: string }).loan
     );
   });
@@ -232,20 +255,24 @@ describe("instruction codec", () => {
 describe("plans, signing and verification", () => {
   test("a compiled plan verifies against its intent and detects tampering", async () => {
     const { intents } = await sampleIntents();
-    for (const intent of intents) {
-      const tx = sdk.compileIntentTransaction(intent, lifetime);
-      const plan = {
-        intent,
-        messageHash: await sdk.messageHash(tx),
-        requiredSigners: sdk.requiredSigners(intent),
-        transaction: sdk.encodeWireTransaction(tx),
-      };
-      expect(await sdk.verifyPlan(plan)).toEqual([]);
-      const inspected = sdk.inspectTransaction(tx);
-      expect(inspected.feePayer).toBe(sdk.requiredSigners(intent)[0]!);
-      expect(inspected.blockhash).toBe(BLOCKHASH);
-    }
-    const fund = intents[1] as import("./src/index.js").FundVaultIntent;
+    await Promise.all(
+      intents.map(async (intent) => {
+        const tx = sdk.compileIntentTransaction(intent, lifetime);
+        const plan = {
+          intent,
+          messageHash: await sdk.messageHash(tx),
+          requiredSigners: sdk.requiredSigners(intent),
+          transaction: sdk.encodeWireTransaction(tx),
+        };
+        expect(await sdk.verifyPlan(plan)).toEqual([]);
+        const inspected = sdk.inspectTransaction(tx);
+        expect(inspected.feePayer).toBe(
+          defined(sdk.requiredSigners(intent)[0])
+        );
+        expect(inspected.blockhash).toBe(BLOCKHASH);
+      })
+    );
+    const fund = intents[1] as Sdk.FundVaultIntent;
     const tx = sdk.compileIntentTransaction(fund, lifetime);
     const plan = {
       intent: fund,
@@ -264,8 +291,8 @@ describe("plans, signing and verification", () => {
 
   test("an extra instruction in the bytes fails review", async () => {
     const { intents } = await sampleIntents();
-    const fund = intents[1]!;
-    const extra = sdk.buildForgeInstruction(intents[0]!);
+    const fund = defined(intents[1]);
+    const extra = sdk.buildForgeInstruction(defined(intents[0]));
     const tx = sdk.compileIntentTransaction(fund, lifetime);
     const msg = sdk.inspectTransaction(tx);
     expect(msg.instructions).toHaveLength(1);
@@ -282,7 +309,7 @@ describe("plans, signing and verification", () => {
         createTransactionMessage({ version: 0 }),
         (m) =>
           setTransactionMessageFeePayer(
-            address(sdk.requiredSigners(fund)[0]!),
+            address(defined(sdk.requiredSigners(fund)[0])),
             m
           ),
         (m) =>
@@ -311,7 +338,7 @@ describe("plans, signing and verification", () => {
 
   test("operation memos make identical intents distinct transactions and are verified", async () => {
     const { intents } = await sampleIntents();
-    const fund = intents[1]!;
+    const fund = defined(intents[1]);
     const plain = sdk.compileIntentTransaction(fund, lifetime);
     const twin = sdk.compileIntentTransaction(fund, lifetime);
     // Same intent + same blockhash = the same message, hence one transaction id on chain.
@@ -349,7 +376,7 @@ describe("plans, signing and verification", () => {
     const b = await newAddress();
     const { intents } = await sampleIntents();
     const pause = {
-      ...(intents[8] as import("./src/index.js").SetDisbursementPausedIntent),
+      ...(intents[8] as Sdk.SetDisbursementPausedIntent),
       approverA: a.address,
       approverB: b.address,
     };
@@ -371,11 +398,8 @@ describe("plans, signing and verification", () => {
     );
     expect(second.added).toEqual([b.address]);
     expect(sdk.isFullySigned(second.transaction)).toBe(true);
-    expect(
-      (await sdk.checkSignatures(second.transaction)).every(
-        (c) => c.status === "valid"
-      )
-    ).toBe(true);
+    const checks = await sdk.checkSignatures(second.transaction);
+    expect(checks.every((c) => c.status === "valid")).toBe(true);
     expect(sdk.transactionSignature(second.transaction)).toBeString();
 
     // Re-submitting the same signature is idempotent.
@@ -414,25 +438,36 @@ describe("plans, signing and verification", () => {
 
 describe("errors, accounts and views", () => {
   test("transaction errors are classified for reconciliation", () => {
-    const at = (code: number | bigint) => ({
-      InstructionError: [0, { Custom: code }],
-    });
-    expect(sdk.decodeTransactionError(at(6010)).category).toBe("replay");
-    expect(sdk.decodeTransactionError(at(6011)).name).toBe("AlreadyApproved");
-    expect(sdk.decodeTransactionError(at(6018n)).name).toBe(
+    expect(sdk.decodeTransactionError(customError(6010)).category).toBe(
+      "replay"
+    );
+    expect(sdk.decodeTransactionError(customError(6011)).name).toBe(
+      "AlreadyApproved"
+    );
+    expect(sdk.decodeTransactionError(customError(6018n)).name).toBe(
       "InvalidWithdrawalState"
     );
-    expect(sdk.decodeTransactionError(at(6015)).category).toBe("rejected");
-    expect(sdk.decodeTransactionError(at(6019)).name).toBe(
+    expect(sdk.decodeTransactionError(customError(6015)).category).toBe(
+      "rejected"
+    );
+    expect(sdk.decodeTransactionError(customError(6019)).name).toBe(
       "StalePauseSequence"
     );
-    expect(sdk.decodeTransactionError(at(6004)).category).toBe("unauthorized");
-    expect(sdk.decodeTransactionError(at(2012)).name).toBe("ConstraintAddress");
-    expect(sdk.decodeTransactionError(at(0), ["propose_loan"])).toMatchObject({
+    expect(sdk.decodeTransactionError(customError(6004)).category).toBe(
+      "unauthorized"
+    );
+    expect(sdk.decodeTransactionError(customError(2012)).name).toBe(
+      "ConstraintAddress"
+    );
+    expect(
+      sdk.decodeTransactionError(customError(0), ["propose_loan"])
+    ).toMatchObject({
       category: "replay",
       name: "AccountAlreadyInUse",
     });
-    expect(sdk.decodeTransactionError(at(1), ["repay_loan"])).toMatchObject({
+    expect(
+      sdk.decodeTransactionError(customError(1), ["repay_loan"])
+    ).toMatchObject({
       category: "token",
       name: "InsufficientFunds",
     });
@@ -448,10 +483,10 @@ describe("errors, accounts and views", () => {
     if (def.type.kind !== "struct") {
       throw new Error("struct expected");
     }
-    const vault = (await newAddress()).address;
-    const disc = idl.accounts.find(
-      (a) => a.name === "Withdrawal"
-    )!.discriminator;
+    const { address: vault } = await newAddress();
+    const { discriminator: disc } = defined(
+      idl.accounts.find((a) => a.name === "Withdrawal")
+    );
     const data = encodeWithDiscriminator(disc, def.type.fields, {
       amount: 42n,
       approvals: [true, false],

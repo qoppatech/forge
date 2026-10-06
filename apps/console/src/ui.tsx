@@ -1,10 +1,17 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { ASSET, short, tokens } from "./format";
 
 type Tone = "success" | "warning" | "error" | "info" | "neutral";
 
-const TONE_ICON: Record<Tone, string> = { success: "●", warning: "◐", error: "■", info: "◆", neutral: "○" };
+const TONE_ICON: Record<Tone, string> = {
+  error: "■",
+  info: "◆",
+  neutral: "○",
+  success: "●",
+  warning: "◐",
+};
 
 export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
@@ -14,7 +21,13 @@ export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   );
 }
 
-export function Amount({ base, unit = true }: { base: string | bigint | null | undefined; unit?: boolean }) {
+export function Amount({
+  base,
+  unit = true,
+}: {
+  base: string | bigint | null | undefined;
+  unit?: boolean;
+}) {
   return (
     <span className="numeric">
       {tokens(base)}
@@ -24,9 +37,17 @@ export function Amount({ base, unit = true }: { base: string | bigint | null | u
 }
 
 /** Abbreviated identifier with a copy action exposing the full value. */
-export function Id({ value, size = 4 }: { value: string | null | undefined; size?: number }) {
+export function Id({
+  value,
+  size = 4,
+}: {
+  value: string | null | undefined;
+  size?: number;
+}) {
   const [copied, setCopied] = useState(false);
-  if (!value) return <span className="muted">—</span>;
+  if (!value) {
+    return <span className="muted">—</span>;
+  }
   return (
     <button
       type="button"
@@ -43,7 +64,15 @@ export function Id({ value, size = 4 }: { value: string | null | undefined; size
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <label className="field">
       <span className="field-label">{label}</span>
@@ -53,7 +82,17 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-export function Section({ id, title, aside, children }: { id: string; title: string; aside?: ReactNode; children: ReactNode }) {
+export function Section({
+  id,
+  title,
+  aside,
+  children,
+}: {
+  id: string;
+  title: string;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section id={id} className="section" aria-labelledby={`${id}-title`}>
       <header className="section-header">
@@ -65,7 +104,33 @@ export function Section({ id, title, aside, children }: { id: string; title: str
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+/** Horizontally scrollable table container that keyboard users can focus and scroll. */
+export function ScrollRegion({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className="table-wrap"
+      aria-label={label}
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable region must be keyboard-focusable to scroll (WCAG 2.1.1)
+      tabIndex={0}
+    >
+      {children}
+    </section>
+  );
+}
+
+export function Empty({
+  title,
+  children,
+}: {
+  title: string;
+  children?: ReactNode;
+}) {
   return (
     <div className="empty">
       <strong>{title}</strong>

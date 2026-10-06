@@ -15,13 +15,27 @@ const config = loadConfig();
 const db = connect(config.databaseUrl);
 const chain = new RpcChain(config.rpcUrl, config.network);
 const applied = await migrate(db);
-if (applied.length) console.log(`migrations applied: ${applied.join(", ")}`);
+if (applied.length) {
+  console.log(`migrations applied: ${applied.join(", ")}`);
+}
 
 if (mode === "api" || mode === "all") {
-  const server = createServer({ db, chain, host: config.host, port: config.port });
-  console.log(`forge api listening on http://${server.hostname}:${server.port} (${config.network})`);
+  const server = createServer({
+    chain,
+    db,
+    host: config.host,
+    port: config.port,
+  });
+  console.log(
+    `forge api listening on http://${server.hostname}:${server.port} (${config.network})`
+  );
 }
 if (mode === "worker" || mode === "all") {
-  new Worker(db, chain, { workerId: config.workerId, tickMs: config.workerTickMs }).start();
-  console.log(`forge worker ${config.workerId} running every ${config.workerTickMs}ms`);
+  new Worker(db, chain, {
+    tickMs: config.workerTickMs,
+    workerId: config.workerId,
+  }).start();
+  console.log(
+    `forge worker ${config.workerId} running every ${config.workerTickMs}ms`
+  );
 }

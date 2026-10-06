@@ -18,23 +18,30 @@ function randomToken(prefix: string): string {
 export async function createInstitution(
   db: Db,
   name: string,
-  webhookUrl?: string,
+  webhookUrl?: string
 ): Promise<{ institution: Institution; apiKey: string }> {
   const apiKey = randomToken("fk");
   const [institution] = await db`
     INSERT INTO institutions (name, api_key_hash, webhook_url, webhook_secret)
     VALUES (${name}, ${await sha256Hex(apiKey)}, ${webhookUrl ?? null}, ${randomToken("whsec")})
     RETURNING id, name, webhook_url, webhook_secret`;
-  return { institution, apiKey };
+  return { apiKey, institution };
 }
 
-export async function authenticate(db: Db, request: Request): Promise<Institution> {
+export async function authenticate(
+  db: Db,
+  request: Request
+): Promise<Institution> {
   const header = request.headers.get("authorization") ?? "";
-  const match = /^Bearer (fk_[0-9a-f]{64})$/.exec(header);
-  if (!match?.[1]) throw new HttpError(401, "unauthorized", "A valid API key is required");
+  const key = /^Bearer (?<key>fk_[0-9a-f]{64})$/u.exec(header)?.groups?.key;
+  if (!key) {
+    throw new HttpError(401, "unauthorized", "A valid API key is required");
+  }
   const [institution] = await db`
     SELECT id, name, webhook_url, webhook_secret FROM institutions
-    WHERE api_key_hash = ${await sha256Hex(match[1])}`;
-  if (!institution) throw new HttpError(401, "unauthorized", "A valid API key is required");
+    WHERE api_key_hash = ${await sha256Hex(key)}`;
+  if (!institution) {
+    throw new HttpError(401, "unauthorized", "A valid API key is required");
+  }
   return institution;
 }

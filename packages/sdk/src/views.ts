@@ -25,10 +25,13 @@ export function loanView(
   >,
   now: bigint
 ): LoanView {
+  // oxlint-disable-next-line default-case -- exhaustive over LoanState; TS enforces it and a default would change the result for unknown states
   switch (loan.state) {
     case "Proposed":
     case "Approved": {
-      if (now > loan.offerExpiry) return { status: "offer_expired" };
+      if (now > loan.offerExpiry) {
+        return { status: "offer_expired" };
+      }
       return { status: loan.state === "Proposed" ? "proposed" : "approved" };
     }
     case "Active": {
@@ -36,7 +39,7 @@ export function loanView(
       return { dueAt, status: now > dueAt ? "overdue" : "active" };
     }
     case "Repaid": {
-      return { status: "repaid", dueAt: loan.disbursedAt + loan.termSeconds };
+      return { dueAt: loan.disbursedAt + loan.termSeconds, status: "repaid" };
     }
   }
 }
@@ -48,7 +51,7 @@ export function parseTokenAmount(
   value: string,
   decimals = UNIT_DECIMALS
 ): bigint {
-  const match = /^(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  const match = /^(?<whole>\d+)(?:\.(?<fraction>\d+))?$/u.exec(value.trim());
   if (!match) {
     throw new TypeError(`Invalid token amount: ${value}`);
   }
@@ -73,7 +76,7 @@ export function formatTokenAmount(
   const scale = 10n ** BigInt(decimals);
   const whole = (abs / scale)
     .toString()
-    .replaceAll(/\B(?=(\d{3})+(?!\d))/g, ",");
+    .replaceAll(/\B(?=(?:\d{3})+(?!\d))/gu, ",");
   const fraction = (abs % scale).toString().padStart(decimals, "0");
   return `${negative ? "-" : ""}${whole}.${fraction}`;
 }

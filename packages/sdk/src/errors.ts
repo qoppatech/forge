@@ -77,6 +77,16 @@ function customCode(value: unknown): number | undefined {
   return undefined;
 }
 
+function forgeErrorCategory(name: string, known: boolean): ErrorCategory {
+  if (REPLAY.has(name)) {
+    return "replay";
+  }
+  if (UNAUTHORIZED.has(name)) {
+    return "unauthorized";
+  }
+  return known ? "rejected" : "unknown";
+}
+
 /**
  * Decodes a transaction error as returned by `getSignatureStatuses`/`getTransaction`.
  * `kinds[i]` is the Forge intent kind at top-level instruction `i`, used to attribute
@@ -108,15 +118,8 @@ export function decodeTransactionError(
     if (code >= 6000) {
       const forge = forgeErrorByCode(code);
       const name = forge?.name ?? `ForgeError(${code})`;
-      const category: ErrorCategory = REPLAY.has(name)
-        ? "replay"
-        : UNAUTHORIZED.has(name)
-          ? "unauthorized"
-          : forge
-            ? "rejected"
-            : "unknown";
       return {
-        category,
+        category: forgeErrorCategory(name, forge !== undefined),
         code,
         instructionIndex,
         message: forge?.msg ?? name,

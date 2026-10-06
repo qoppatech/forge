@@ -3,11 +3,11 @@ export function bytesToHex(bytes: Uint8Array): string {
 }
 
 export function hexToBytes(hex: string, expectedLength?: number): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})*$/i.test(hex)) {
+  if (!/^(?:[0-9a-f]{2})*$/iu.test(hex)) {
     throw new TypeError("Invalid hex string");
   }
   const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) {
+  for (let i = 0; i < out.length; i += 1) {
     out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
   if (expectedLength !== undefined && out.length !== expectedLength) {
@@ -19,14 +19,15 @@ export function hexToBytes(hex: string, expectedLength?: number): Uint8Array {
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+    binary += String.fromCodePoint(byte);
   }
   return btoa(binary);
 }
 
 export function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  // atob yields one char per byte (0-255), so codePointAt(0) is always defined.
+  return Uint8Array.from(binary, (c) => c.codePointAt(0) ?? 0);
 }
 
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {

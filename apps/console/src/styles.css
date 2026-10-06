@@ -125,7 +125,19 @@ pre {
   width: 24px;
   height: 24px;
   background: var(--forge-brand);
-  clip-path: polygon(0 0, 85% 0, 100% 15%, 100% 30%, 38% 30%, 38% 45%, 80% 45%, 80% 62%, 38% 62%, 38% 100%, 0 100%);
+  clip-path: polygon(
+    0 0,
+    85% 0,
+    100% 15%,
+    100% 30%,
+    38% 30%,
+    38% 45%,
+    80% 45%,
+    80% 62%,
+    38% 62%,
+    38% 100%,
+    0 100%
+  );
 }
 
 .rail nav {
@@ -405,11 +417,26 @@ input {
   white-space: nowrap;
 }
 
-.badge-success { color: var(--forge-success); background: var(--forge-success-bg); }
-.badge-warning { color: var(--forge-warning); background: var(--forge-warning-bg); }
-.badge-error { color: var(--forge-error); background: var(--forge-error-bg); }
-.badge-info { color: var(--forge-info); background: var(--forge-info-bg); }
-.badge-neutral { color: var(--forge-muted); background: var(--forge-raised); }
+.badge-success {
+  color: var(--forge-success);
+  background: var(--forge-success-bg);
+}
+.badge-warning {
+  color: var(--forge-warning);
+  background: var(--forge-warning-bg);
+}
+.badge-error {
+  color: var(--forge-error);
+  background: var(--forge-error-bg);
+}
+.badge-info {
+  color: var(--forge-info);
+  background: var(--forge-info-bg);
+}
+.badge-neutral {
+  color: var(--forge-muted);
+  background: var(--forge-raised);
+}
 
 .tag {
   margin-left: var(--forge-space-2);
@@ -497,8 +524,14 @@ td.actions {
   font-size: 14px;
 }
 
-.notice-error { color: var(--forge-error); background: var(--forge-error-bg); }
-.notice-info { color: var(--forge-info); background: var(--forge-info-bg); }
+.notice-error {
+  color: var(--forge-error);
+  background: var(--forge-error-bg);
+}
+.notice-info {
+  color: var(--forge-info);
+  background: var(--forge-info-bg);
+}
 
 .exceptions {
   margin: var(--forge-space-4) 0;

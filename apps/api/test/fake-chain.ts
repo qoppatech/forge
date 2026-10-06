@@ -1,12 +1,12 @@
-import { getAddressDecoder } from "@solana/kit";
 import {
   buildForgeInstruction,
   decodeWireTransaction,
   inspectTransaction,
   messageHash,
   transactionSignature,
-  type ForgeIntent,
 } from "@forge/sdk";
+import type { ForgeIntent } from "@forge/sdk";
+import { getAddressDecoder } from "@solana/kit";
 
 import type {
   AccountSnapshot,
@@ -19,7 +19,8 @@ import type {
 } from "../src/chain";
 
 const addressDecoder = getAddressDecoder();
-export const randomAddress = () => addressDecoder.decode(crypto.getRandomValues(new Uint8Array(32)));
+export const randomAddress = () =>
+  addressDecoder.decode(crypto.getRandomValues(new Uint8Array(32)));
 
 /**
  * A programmable ledger for failure-mode tests. Nothing executes: tests decide when a
@@ -27,9 +28,9 @@ export const randomAddress = () => addressDecoder.decode(crypto.getRandomValues(
  */
 export class FakeChain implements Chain {
   readonly network = "test";
-  confirmedHeight = 1_000n;
+  confirmedHeight = 1000n;
   finalizedHeight = 968n;
-  slot = 5_000n;
+  slot = 5000n;
   rpcDown = false;
   /** When set, every plan gets this blockhash (two requests within one slot). */
   fixedBlockhash: string | undefined;
@@ -41,60 +42,101 @@ export class FakeChain implements Chain {
   readonly accounts = new Map<string, AccountSnapshot>();
 
   private guard() {
-    if (this.rpcDown) throw new Error("fetch failed: RPC unavailable");
+    if (this.rpcDown) {
+      throw new Error("fetch failed: RPC unavailable");
+    }
   }
 
-  async getLatestBlockhash() {
-    this.guard();
-    return { blockhash: this.fixedBlockhash ?? randomAddress(), lastValidBlockHeight: this.confirmedHeight + 150n };
+  /** Settles like an RPC call: an outage or lookup failure rejects rather than throws. */
+  private respond<T>(produce: () => T): Promise<T> {
+    try {
+      this.guard();
+      return Promise.resolve(produce());
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
-  async getBlockHeight(commitment: Commitment) {
-    this.guard();
-    return commitment === "finalized" ? this.finalizedHeight : this.confirmedHeight;
+  getLatestBlockhash() {
+    return this.respond(() => ({
+      blockhash: this.fixedBlockhash ?? randomAddress(),
+      lastValidBlockHeight: this.confirmedHeight + 150n,
+    }));
   }
 
-  async sendTransaction(wire: string) {
-    this.guard();
-    if (this.sendFailure) throw this.sendFailure;
-    this.sent.push(wire);
-    return transactionSignature(decodeWireTransaction(wire));
+  getBlockHeight(commitment: Commitment) {
+    return this.respond(() =>
+      commitment === "finalized" ? this.finalizedHeight : this.confirmedHeight
+    );
   }
 
-  async getSignatureStatuses(signatures: string[]) {
-    this.guard();
-    return signatures.map((s) => this.statuses.get(s) ?? null);
+  sendTransaction(wire: string) {
+    return this.respond(() => {
+      if (this.sendFailure) {
+        throw this.sendFailure;
+      }
+      this.sent.push(wire);
+      return transactionSignature(decodeWireTransaction(wire));
+    });
   }
 
-  async getTransaction(signature: string) {
-    this.guard();
-    const status = this.statuses.get(signature);
-    return status?.confirmationStatus === "finalized" ? (this.transactions.get(signature) ?? null) : null;
+  getSignatureStatuses(signatures: string[]) {
+    return this.respond(() =>
+      signatures.map((s) => this.statuses.get(s) ?? null)
+    );
   }
 
-  async getSignaturesForAddress(address: string, options: { until?: string; before?: string; limit: number }) {
-    this.guard();
+  getTransaction(signature: string) {
+    return this.respond(() => {
+      const status = this.statuses.get(signature);
+      return status?.confirmationStatus === "finalized"
+        ? (this.transactions.get(signature) ?? null)
+        : null;
+    });
+  }
+
+  getSignaturesForAddress(
+    address: string,
+    options: { until?: string; before?: string; limit: number }
+  ) {
+    return this.respond(() => this.signaturesFor(address, options));
+  }
+
+  private signaturesFor(
+    address: string,
+    options: { until?: string; before?: string; limit: number }
+  ) {
     const all = (this.history.get(address) ?? []).filter(
-      (info) => this.statuses.get(info.signature)?.confirmationStatus === "finalized",
+      (info) =>
+        this.statuses.get(info.signature)?.confirmationStatus === "finalized"
     );
     let list = all;
-    if (options.before) list = list.slice(list.findIndex((i) => i.signature === options.before) + 1);
+    if (options.before) {
+      list = list.slice(
+        list.findIndex((i) => i.signature === options.before) + 1
+      );
+    }
     if (options.until) {
       // Like a real node, an `until` signature that is no longer in its ledger is an error.
-      if (!this.transactions.has(options.until)) throw new Error(`Transaction ${options.until} not found`);
+      if (!this.transactions.has(options.until)) {
+        throw new Error(`Transaction ${options.until} not found`);
+      }
       const stop = list.findIndex((i) => i.signature === options.until);
-      if (stop >= 0) list = list.slice(0, stop);
+      if (stop !== -1) {
+        list = list.slice(0, stop);
+      }
     }
     return list.slice(0, options.limit);
   }
 
-  async getAccounts(addresses: string[]) {
-    this.guard();
-    return addresses.map((a) => this.accounts.get(a) ?? null);
+  getAccounts(addresses: string[]) {
+    return this.respond(() =>
+      addresses.map((a) => this.accounts.get(a) ?? null)
+    );
   }
 
   setAccount(address: string, data: Uint8Array) {
-    this.accounts.set(address, { owner: "forge", lamports: 1n, data });
+    this.accounts.set(address, { data, lamports: 1n, owner: "forge" });
   }
 
   /**
@@ -108,63 +150,77 @@ export class FakeChain implements Chain {
       commitment?: Commitment;
       tokenBalances?: TokenBalanceChange[];
       watch?: string[];
-    } = {},
+    } = {}
   ): Promise<string> {
     const transaction = decodeWireTransaction(wire);
     const signature = transactionSignature(transaction);
     const inspected = inspectTransaction(transaction);
     this.slot += 1n;
     this.statuses.set(signature, {
-      slot: this.slot,
-      err: options.err ?? null,
       confirmationStatus: options.commitment ?? "finalized",
+      err: options.err ?? null,
+      slot: this.slot,
     });
     this.transactions.set(signature, {
-      signature,
-      slot: this.slot,
       blockTime: 1_900_000_000n,
+      blockhash: inspected.blockhash,
       err: options.err ?? null,
       feePayer: inspected.feePayer,
-      blockhash: inspected.blockhash,
-      messageHash: await messageHash(transaction),
       instructions: inspected.instructions.map((ix, index) => ({
-        programAddress: ix.programAddress,
         accounts: ix.accounts,
         data: ix.intent
-          ? new Uint8Array(buildForgeInstruction(ix.intent).data!)
+          ? new Uint8Array(buildForgeInstruction(ix.intent).data ?? [])
           : new TextEncoder().encode(ix.memo ?? ""),
         index,
         innerIndex: -1,
+        programAddress: ix.programAddress,
       })),
-      tokenBalances: options.tokenBalances ?? [],
       logs: [],
+      messageHash: await messageHash(transaction),
+      signature,
+      slot: this.slot,
+      tokenBalances: options.tokenBalances ?? [],
     });
-    const watched = new Set([...inspected.instructions.flatMap((ix) => ix.accounts), ...(options.watch ?? [])]);
+    const watched = new Set([
+      ...inspected.instructions.flatMap((ix) => ix.accounts),
+      ...(options.watch ?? []),
+    ]);
     for (const address of watched) {
-      this.history.set(address, [{ signature, slot: this.slot, err: options.err ?? null }, ...(this.history.get(address) ?? [])]);
+      this.history.set(address, [
+        { err: options.err ?? null, signature, slot: this.slot },
+        ...(this.history.get(address) ?? []),
+      ]);
     }
     return signature;
   }
 
   /** A transaction with no Forge instruction (e.g. a plain SPL transfer into a vault). */
-  landRaw(input: { signature: string; feePayer: string; tokenBalances: TokenBalanceChange[] }) {
+  landRaw(input: {
+    signature: string;
+    feePayer: string;
+    tokenBalances: TokenBalanceChange[];
+  }) {
     this.slot += 1n;
-    this.statuses.set(input.signature, { slot: this.slot, err: null, confirmationStatus: "finalized" });
-    this.transactions.set(input.signature, {
-      signature: input.signature,
+    this.statuses.set(input.signature, {
+      confirmationStatus: "finalized",
+      err: null,
       slot: this.slot,
+    });
+    this.transactions.set(input.signature, {
       blockTime: 1_900_000_000n,
+      blockhash: randomAddress(),
       err: null,
       feePayer: input.feePayer,
-      blockhash: randomAddress(),
-      messageHash: input.signature,
       instructions: [],
-      tokenBalances: input.tokenBalances,
       logs: [],
+      messageHash: input.signature,
+      signature: input.signature,
+      slot: this.slot,
+      tokenBalances: input.tokenBalances,
     });
     for (const b of input.tokenBalances) {
       this.history.set(b.account, [
-        { signature: input.signature, slot: this.slot, err: null },
+        { err: null, signature: input.signature, slot: this.slot },
         ...(this.history.get(b.account) ?? []),
       ]);
     }
@@ -176,25 +232,36 @@ export class FakeChain implements Chain {
       this.transactions.delete(signature);
       this.statuses.delete(signature);
       for (const [address, list] of this.history) {
-        this.history.set(address, list.filter((i) => i.signature !== signature));
+        this.history.set(
+          address,
+          list.filter((i) => i.signature !== signature)
+        );
       }
     }
   }
 
   setCommitment(signature: string, commitment: Commitment) {
     const status = this.statuses.get(signature);
-    if (status) this.statuses.set(signature, { ...status, confirmationStatus: commitment });
+    if (status) {
+      this.statuses.set(signature, {
+        ...status,
+        confirmationStatus: commitment,
+      });
+    }
   }
 
   /** Moves both heights past every blockhash issued so far. */
   expireAll() {
-    this.confirmedHeight += 1_000n;
+    this.confirmedHeight += 1000n;
     this.finalizedHeight = this.confirmedHeight - 32n;
   }
 }
 
 export function forgeIntentOf(wire: string): ForgeIntent {
-  const intent = inspectTransaction(decodeWireTransaction(wire)).instructions[0]?.intent;
-  if (!intent) throw new Error("not a Forge transaction");
+  const intent = inspectTransaction(decodeWireTransaction(wire)).instructions[0]
+    ?.intent;
+  if (!intent) {
+    throw new Error("not a Forge transaction");
+  }
   return intent;
 }

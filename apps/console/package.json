@@ -23,8 +23,19 @@
   },
   "nx": {
     "targets": {
-      "build": { "dependsOn": ["^build"], "outputs": ["{projectRoot}/dist"] },
-      "check-types": { "dependsOn": ["^build"] }
+      "build": {
+        "dependsOn": [
+          "^build"
+        ],
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      },
+      "check-types": {
+        "dependsOn": [
+          "^build"
+        ]
+      }
     }
   }
 }

@@ -27,6 +27,9 @@ import { verifyPlan, signPlanTransaction } from "@forge/sdk";
 const problems = await verifyPlan(plan); // decode the bytes and compare them with the intent
 if (problems.length === 0) {
   const signed = await signPlanTransaction(plan.transaction, [myKeyPair]);
-  await fetch(`/v1/operations/${operation.id}/signatures`, { method: "POST", body: JSON.stringify({ transaction: signed }) });
+  await fetch(`/v1/operations/${operation.id}/signatures`, {
+    method: "POST",
+    body: JSON.stringify({ transaction: signed }),
+  });
 }
 ```

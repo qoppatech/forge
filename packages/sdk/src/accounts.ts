@@ -59,7 +59,7 @@ export type ForgeAccount =
   | { type: "Withdrawal"; data: WithdrawalAccount };
 
 const camel = (name: string) =>
-  name.replaceAll(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  name.replaceAll(/_(?<letter>[a-z])/gu, (_, c: string) => c.toUpperCase());
 
 function normalize(value: BorshValue): unknown {
   if (value instanceof Uint8Array) {
@@ -68,17 +68,12 @@ function normalize(value: BorshValue): unknown {
   if (Array.isArray(value)) {
     return value.map(normalize);
   }
-  return typeof value === "object" && value !== null
-    ? decodeObject(value)
-    : value;
-}
-
-function decodeObject(
-  values: Record<string, BorshValue>
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(values).map(([k, v]) => [camel(k), normalize(v)])
-  );
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [camel(k), normalize(v)])
+    );
+  }
+  return value;
 }
 
 function decode<T>(name: string, data: Uint8Array): T | undefined {
@@ -99,7 +94,7 @@ function decode<T>(name: string, data: Uint8Array): T | undefined {
   if (!values) {
     return undefined;
   }
-  return decodeObject(values) as T;
+  return normalize(values) as T;
 }
 
 function required<T>(name: string, data: Uint8Array): T {
@@ -122,7 +117,7 @@ export function decodeForgeAccount(data: Uint8Array): ForgeAccount | undefined {
   for (const type of ["Vault", "Loan", "Withdrawal"] as const) {
     const decoded = decode<never>(type, data);
     if (decoded) {
-      return { type, data: decoded } as ForgeAccount;
+      return { data: decoded, type } as ForgeAccount;
     }
   }
   return undefined;

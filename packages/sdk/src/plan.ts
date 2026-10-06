@@ -46,10 +46,17 @@ export function operationMemo(operationId: string, attemptNo: number): string {
 export function parseOperationMemo(
   memo: string
 ): { operationId: string; attemptNo: number } | undefined {
-  const match = /^forge:op:([0-9a-f-]{36}):(\d+)$/.exec(memo);
-  return match
-    ? { attemptNo: Number(match[2]), operationId: match[1]! }
-    : undefined;
+  const groups =
+    /^forge:op:(?<operationId>[0-9a-f-]{36}):(?<attemptNo>\d+)$/u.exec(
+      memo
+    )?.groups;
+  if (groups?.operationId === undefined || groups.attemptNo === undefined) {
+    return undefined;
+  }
+  return {
+    attemptNo: Number(groups.attemptNo),
+    operationId: groups.operationId,
+  };
 }
 
 export interface BlockhashLifetime {
@@ -88,7 +95,7 @@ export function compileIntentTransaction(
   options: { memo?: string } = {}
 ): Transaction {
   const signers = requiredSigners(intent);
-  const feePayer = signers[0];
+  const [feePayer] = signers;
   if (!feePayer) {
     throw new Error("Intent has no signer");
   }
@@ -159,20 +166,20 @@ export function inspectTransaction(
     feePayer: message.feePayer.address,
     instructions: (message.instructions as readonly Instruction[]).map(
       (ix) => ({
-        programAddress: ix.programAddress,
         accounts: (ix.accounts ?? []).map((a) => a.address),
         intent:
           ix.programAddress === FORGE_PROGRAM_ADDRESS
             ? decodeForgeInstruction({
-                programAddress: ix.programAddress,
                 accounts: ix.accounts ?? [],
                 data: new Uint8Array(ix.data ?? []),
+                programAddress: ix.programAddress,
               })
             : undefined,
         memo:
           ix.programAddress === MEMO_PROGRAM_ADDRESS
             ? new TextDecoder().decode(new Uint8Array(ix.data ?? []))
             : undefined,
+        programAddress: ix.programAddress,
       })
     ),
     signers: Object.keys(transaction.signatures),
@@ -229,7 +236,7 @@ export async function verifyPlan(
   if (inspected.feePayer !== signers[0]) {
     problems.push("Unexpected fee payer");
   }
-  if (!intentsEqual([...inspected.signers].sort(), [...signers].sort())) {
+  if (!intentsEqual(inspected.signers.toSorted(), signers.toSorted())) {
     problems.push("Signer set differs from the intent's required signers");
   }
   if ((await messageHash(transaction)) !== plan.messageHash) {
@@ -258,21 +265,22 @@ export interface SignatureCheck {
 export async function checkSignatures(
   transaction: Transaction
 ): Promise<SignatureCheck[]> {
-  const checks: SignatureCheck[] = [];
-  for (const [signer, signature] of Object.entries(transaction.signatures)) {
-    if (!signature) {
-      checks.push({ signer, status: "missing" });
-      continue;
-    }
-    const key = await getPublicKeyFromAddress(signer as Address);
-    const valid = await verifySignature(
-      key,
-      signature,
-      transaction.messageBytes
-    );
-    checks.push({ signer, status: valid ? "valid" : "invalid" });
-  }
-  return checks;
+  return await Promise.all(
+    Object.entries(transaction.signatures).map(
+      async ([signer, signature]): Promise<SignatureCheck> => {
+        if (!signature) {
+          return { signer, status: "missing" };
+        }
+        const key = await getPublicKeyFromAddress(signer as Address);
+        const valid = await verifySignature(
+          key,
+          signature,
+          transaction.messageBytes
+        );
+        return { signer, status: valid ? "valid" : "invalid" };
+      }
+    )
+  );
 }
 
 /**

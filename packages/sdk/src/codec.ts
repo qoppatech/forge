@@ -21,51 +21,56 @@ export type BorshValue =
 const addressEncoder = getAddressEncoder();
 const addressDecoder = getAddressDecoder();
 
-const U64_MAX = (1n << 64n) - 1n;
-const I64_MIN = -(1n << 63n);
-const I64_MAX = (1n << 63n) - 1n;
+const U64_MAX = 2n ** 64n - 1n;
+const I64_MIN = -(2n ** 63n);
+const I64_MAX = 2n ** 63n - 1n;
 
-class Writer {
-  private chunks: Uint8Array[] = [];
+function createWriter() {
+  const chunks: Uint8Array[] = [];
+  return {
+    bytes(value: Uint8Array) {
+      chunks.push(value);
+    },
 
-  bytes(value: Uint8Array) {
-    this.chunks.push(value);
-  }
+    finish(): Uint8Array {
+      const length = chunks.reduce((sum, c) => sum + c.length, 0);
+      const out = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return out;
+    },
 
-  int(value: bigint, size: number, signed: boolean) {
-    const buffer = new Uint8Array(size);
-    const view = new DataView(buffer.buffer);
-    if (size === 1) {
-      view.setUint8(0, Number(value));
-    } else if (size === 2) {
-      view.setUint16(0, Number(value), true);
-    } else if (size === 4) {
-      view.setUint32(0, Number(value), true);
-    } else if (signed) {
-      view.setBigInt64(0, value, true);
-    } else {
-      view.setBigUint64(0, value, true);
-    }
-    this.chunks.push(buffer);
-  }
-
-  finish(): Uint8Array {
-    const length = this.chunks.reduce((sum, c) => sum + c.length, 0);
-    const out = new Uint8Array(length);
-    let offset = 0;
-    for (const chunk of this.chunks) {
-      out.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return out;
-  }
+    int(value: bigint, size: number, signed: boolean) {
+      const buffer = new Uint8Array(size);
+      const view = new DataView(buffer.buffer);
+      if (size === 1) {
+        view.setUint8(0, Number(value));
+      } else if (size === 2) {
+        view.setUint16(0, Number(value), true);
+      } else if (size === 4) {
+        view.setUint32(0, Number(value), true);
+      } else if (signed) {
+        view.setBigInt64(0, value, true);
+      } else {
+        view.setBigUint64(0, value, true);
+      }
+      chunks.push(buffer);
+    },
+  };
 }
+
+type Writer = ReturnType<typeof createWriter>;
 
 class Reader {
   offset = 0;
+  private readonly data: Uint8Array;
   private view: DataView;
 
-  constructor(private readonly data: Uint8Array) {
+  constructor(data: Uint8Array) {
+    this.data = data;
     this.view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   }
 
@@ -101,19 +106,19 @@ function integerSpec(
 ): { size: number; signed: boolean } | undefined {
   switch (type) {
     case "u8": {
-      return { size: 1, signed: false };
+      return { signed: false, size: 1 };
     }
     case "u16": {
-      return { size: 2, signed: false };
+      return { signed: false, size: 2 };
     }
     case "u32": {
-      return { size: 4, signed: false };
+      return { signed: false, size: 4 };
     }
     case "u64": {
-      return { size: 8, signed: false };
+      return { signed: false, size: 8 };
     }
     case "i64": {
-      return { size: 8, signed: true };
+      return { signed: true, size: 8 };
     }
     default: {
       return undefined;
@@ -177,9 +182,9 @@ function encodeValue(
     if (!Array.isArray(value) || value.length !== length) {
       throw new TypeError(`${path} must have ${length} elements`);
     }
-    value.forEach((item, index) =>
-      encodeValue(writer, inner, item, `${path}[${index}]`)
-    );
+    for (const [index, item] of value.entries()) {
+      encodeValue(writer, inner, item, `${path}[${index}]`);
+    }
     return;
   }
   const def = idlTypeDef(type.defined.name);
@@ -191,6 +196,7 @@ function encodeValue(
     writer.int(BigInt(index), 1, false);
     return;
   }
+  // oxlint-disable-next-line no-use-before-define -- mutually recursive with encodeFields (nested structs)
   encodeFields(
     writer,
     def.type.fields,
@@ -249,6 +255,7 @@ function decodeValue(reader: Reader, type: IdlType): BorshValue {
     }
     return variant.name;
   }
+  // oxlint-disable-next-line no-use-before-define -- mutually recursive with decodeFields (nested structs)
   return decodeFields(reader, def.type.fields);
 }
 
@@ -275,7 +282,7 @@ export function encodeWithDiscriminator(
   fields: IdlField[],
   values: Record<string, BorshValue>
 ): Uint8Array {
-  const writer = new Writer();
+  const writer = createWriter();
   writer.bytes(Uint8Array.from(discriminator));
   encodeFields(writer, fields, values, "args");
   return writer.finish();

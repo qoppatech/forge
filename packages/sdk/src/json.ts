@@ -22,22 +22,29 @@ export function toJsonSafe(value: unknown): unknown {
   return value;
 }
 
+function compareKeys(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+  return a > b ? 1 : 0;
+}
+
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) {
+    return `[${v.map(canonicalJson).join(",")}]`;
+  }
+  if (v && typeof v === "object") {
+    const entries = Object.entries(v as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .toSorted(([a], [b]) => compareKeys(a, b));
+    return `{${entries.map(([k, item]) => `${JSON.stringify(k)}:${canonicalJson(item)}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+
 /** Canonical JSON (sorted keys) used for request hashing and intent comparison. */
 export function stableStringify(value: unknown): string {
-  const safe = toJsonSafe(value);
-  const walk = (v: unknown): string => {
-    if (Array.isArray(v)) {
-      return `[${v.map(walk).join(",")}]`;
-    }
-    if (v && typeof v === "object") {
-      const entries = Object.entries(v as Record<string, unknown>)
-        .filter(([, item]) => item !== undefined)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-      return `{${entries.map(([k, item]) => `${JSON.stringify(k)}:${walk(item)}`).join(",")}}`;
-    }
-    return JSON.stringify(v);
-  };
-  return walk(safe);
+  return canonicalJson(toJsonSafe(value));
 }
 
 export function intentsEqual(a: unknown, b: unknown): boolean {
