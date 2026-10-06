@@ -118,7 +118,7 @@ Scope: issues #1 (local-validator gate), #3 (SDK), #4 (keyless orchestration), #
 | --- | --- |
 | `bash scripts/build.sh && cargo test --locked -p forge` | 19 passed (10 vault, 1 lifecycle, 8 negative), including withdrawal replay and stale-pause tests |
 | `cargo fmt --all -- --check`, `cargo clippy --locked -p forge --all-targets -- -D warnings` | Passed |
-| `bun run --cwd packages/sdk build && bun test` (packages/sdk) | 15 passed: IDL drift, codec round-trips, plan verification, memo uniqueness, signature merge and forgery rejection, error classification, views |
+| `bun run --cwd packages/sdk build && bun test` (packages/sdk) | 16 passed: IDL drift, codec round-trips, plan verification, memo uniqueness, signature merge and forgery rejection, error classification, views, JSON-safe timestamps |
 | `bun test` (apps/api, local PostgreSQL) | 22 passed: auth isolation, idempotency 409, persist-before-send, partial signatures, confirmed→finalized, proven expiry and re-prepare, RPC outage, concurrent workers, replay classification, direct calls and donations, wallet self-broadcast, memo matching, pruned cursors, webhooks |
 | `bun audit` | 17 advisories, all in pre-existing dev tooling (`nx` → axios/smol-toml; site `shadcn`/`serve` and `ultracite` → braces/brace-expansion). None reach `@solana/kit` or the new runtime packages. |
 
@@ -155,7 +155,9 @@ The independent treasury, approver A, approver B, borrower and outsider wallets 
    - The tracker indexes the vault before declaring a live attempt expired.
    - The local validator keeps 500k shreds (several hours; `FORGE_LEDGER_SHREDS` overrides).
    - Worker heartbeats now keep each stage's last error until that stage recovers.
-3. The run also corrected a wrong expectation (destination substitution reports 6017, as `loan_negative.rs` already asserts).
+3. **Timestamps serialized as `{}`.** Found while driving the console against the live stack. `toJsonSafe` walked a `Date` like a plain object, so every API timestamp came out as `{}` and the console showed the worker as "stale NaNs". Dates now serialize as ISO-8601, and tests assert it.
+   - After the fix, a loan was proposed and signed in the console as approver A and finalized at slot 1388. The console showed "0 of 2 approvals" and "Proposed" as separate states.
+4. The run also corrected a wrong expectation (destination substitution reports 6017, as `loan_negative.rs` already asserts).
 
 ### Remaining limits
 
