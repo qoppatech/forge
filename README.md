@@ -53,6 +53,13 @@ bun run e2e                                        # scripted validation (own da
 nix-shell --run 'bash scripts/localnet.sh down'    # or `reset` to delete all local state
 ```
 
+For a long-running demo, `nix-shell --run 'bash scripts/demo.sh up'` starts all of the above as `systemd --user` services on a fresh chain with seeded wallets (`status`, `down`; logs via `journalctl --user -u forge-demo-api`). Everything stays on loopback; use it from another machine through an SSH tunnel:
+
+```sh
+ssh -N -L 3003:127.0.0.1:3003 <user>@<host>   # then open http://localhost:3003
+# optional: add -L 3002:127.0.0.1:3002 for the API, -L 8899:127.0.0.1:8899 -L 8900:127.0.0.1:8900 for RPC
+```
+
 `solana-test-validator` 4.0.3 binds RPC, websocket and faucet to all interfaces and has no option to restrict them; keep a host firewall in place (the tested NixOS host's default firewall blocks inbound connections).
 
 The API never receives a private key. Demo wallets live only in `.local/demo/session.json` and in the signer processes: the e2e script, or the console tab acting as each role's wallet.
