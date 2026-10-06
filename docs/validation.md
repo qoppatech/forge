@@ -153,7 +153,7 @@ The independent treasury, approver A, approver B, borrower and outsider wallets 
 2. **Ledger pruning stalls cursors.** `solana-test-validator` keeps 10,000 shreds by default, about 11 minutes here. Once the cursor's transaction was purged, `getSignaturesForAddress(until)` failed with "not found" and the token-account cursor stopped advancing.
    - The indexer now falls back to a slot-bounded scan.
    - The tracker indexes the vault before declaring a live attempt expired.
-   - The local validator keeps 50M shreds.
+   - The local validator keeps 500k shreds (several hours; `FORGE_LEDGER_SHREDS` overrides).
    - Worker heartbeats now keep each stage's last error until that stage recovers.
 3. The run also corrected a wrong expectation (destination substitution reports 6017, as `loan_negative.rs` already asserts).
 

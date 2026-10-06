@@ -47,8 +47,8 @@ validator_up() {
 	fi
 	# Genesis-loaded program: a disposable loopback ledger, never Devnet or mainnet.
 	# The default ledger limit (10,000 shreds ≈ 11 minutes here) purges history the indexer
-	# cursors and expiry proofs rely on; keep enough for long sessions.
-	solana-test-validator --reset --quiet --ledger "$LEDGER" --limit-ledger-size 50000000 \
+	# cursors and expiry proofs rely on. 500k shreds keeps several hours within ~1 GB.
+	solana-test-validator --reset --quiet --ledger "$LEDGER" --limit-ledger-size "${FORGE_LEDGER_SHREDS:-500000}" \
 		--bind-address 127.0.0.1 --rpc-port "$RPC_PORT" \
 		--faucet-port "$((RPC_PORT + 1001))" \
 		--bpf-program "$PROGRAM_ID" target/deploy/forge.so \
