@@ -529,7 +529,14 @@ export function Withdrawals({
     ? data.vault?.approvers.indexOf(signers[role].address)
     : -1;
   if (data.withdrawals.length === 0) {
-    return null;
+    return (
+      <Section id="withdrawals" title="Withdrawals">
+        <Empty title="No withdrawals">
+          An approver proposes a withdrawal to the fixed treasury destination;
+          it executes when the other approver approves.
+        </Empty>
+      </Section>
+    );
   }
   return (
     <Section id="withdrawals" title="Withdrawals">
@@ -689,7 +696,13 @@ export function Operations({
 export function StatementView({ data }: { data: Data }) {
   const { statement } = data;
   if (!statement) {
-    return null;
+    return (
+      <Section id="statement" title="Statement">
+        <Empty title="No statement yet">
+          Create and fund the vault; postings come from finalized transactions.
+        </Empty>
+      </Section>
+    );
   }
   return (
     <Section

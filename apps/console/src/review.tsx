@@ -5,7 +5,7 @@ import {
   verifyPlan,
 } from "@forge/sdk";
 import type { InspectedTransaction } from "@forge/sdk";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Api, Operation, Role } from "./api";
 import { ASSET, KIND_LABELS, STATUS, tokens, unixDate } from "./format";
@@ -174,6 +174,13 @@ export function Review({
   const [checks, setChecks] = useState<PlanCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  // Captured on first render, before App makes the page inert (which blurs the opener).
+  const opener = useRef(
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+  );
 
   const load = useCallback(
     async () =>
@@ -215,6 +222,19 @@ export function Review({
     };
     void verify();
   }, [planBytes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modal focus: enter the drawer once it renders, return to the opener when it closes.
+  // The rest of the page is inert while the drawer is open (see App).
+  const loaded = op !== null;
+  useEffect(() => {
+    if (loaded) {
+      dialogRef.current?.focus();
+    }
+  }, [loaded]);
+  useEffect(() => {
+    const element = opener.current;
+    return () => element?.focus();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -266,6 +286,8 @@ export function Review({
       }}
     >
       <aside
+        ref={dialogRef}
+        tabIndex={-1}
         className="drawer"
         // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- side drawer keeps its layout; <dialog> brings UA styles and top-layer behaviour
         role="dialog"

@@ -124,6 +124,34 @@ export function ScrollRegion({
   );
 }
 
+const THEME_KEY = "forge.theme";
+
+/** Light by default; dark only when the operator chose it (DESIGN.md, implementation guide). */
+export function storedTheme(): "light" | "dark" {
+  return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+}
+
+export function ThemeToggle() {
+  const [dark, setDark] = useState(
+    () => document.documentElement.dataset.theme === "dark"
+  );
+  return (
+    <button
+      type="button"
+      className="secondary"
+      aria-pressed={dark}
+      onClick={() => {
+        const next = dark ? "light" : "dark";
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem(THEME_KEY, next);
+        setDark(!dark);
+      }}
+    >
+      Dark theme
+    </button>
+  );
+}
+
 export function Empty({
   title,
   children,

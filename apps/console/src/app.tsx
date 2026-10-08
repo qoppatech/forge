@@ -25,7 +25,7 @@ import {
 import { Review } from "./review";
 import { ROLES, ROLE_LABELS, loadSigners } from "./signers";
 import type { DemoSigner } from "./signers";
-import { Empty } from "./ui";
+import { Empty, ThemeToggle } from "./ui";
 
 export interface Data {
   status: Status | null;
@@ -72,6 +72,7 @@ export function App() {
   const [role, setRole] = useState<Role>("treasury");
   const [data, setData] = useState<Data>(EMPTY);
   const [reviewId, setReviewId] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string>(NAV[0][0]);
   const [notice, setNotice] = useState<{
     tone: "error" | "info";
     text: string;
@@ -141,6 +142,35 @@ export function App() {
     return () => clearInterval(timer);
   }, [refresh]);
 
+  // Marks the last section whose top has reached the top of the viewport. At the
+  // bottom of the page short sections never get there, so prefer the one the user picked.
+  const ready = Boolean(session && signers && api);
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    const onScroll = () => {
+      const sections = NAV.map(([id]) => document.querySelector(`#${id}`))
+        .filter((section) => section !== null)
+        .map((section) => ({
+          id: section.id,
+          top: section.getBoundingClientRect().top,
+        }));
+      const atBottom =
+        window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 1;
+      const picked = window.location.hash.slice(1);
+      const visible = sections.filter((x) => x.top < window.innerHeight);
+      const next = atBottom
+        ? (visible.find((x) => x.id === picked) ?? visible.at(-1))
+        : sections.findLast((x) => x.top <= 96);
+      setCurrent(next?.id ?? NAV[0][0]);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [ready]);
+
   /** Plans an operation and opens its review; nothing is signed until the user confirms. */
   const act = useCallback(
     async (path: string, body: unknown) => {
@@ -186,14 +216,23 @@ export function App() {
 
   return (
     <div className="shell">
-      <aside className="rail" aria-label="Navigation and signer">
+      <aside
+        className="rail"
+        aria-label="Navigation and signer"
+        inert={reviewId !== null}
+      >
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
           <span className="brand-word">FORGE</span>
         </div>
         <nav>
           {NAV.map(([id, label]) => (
-            <a key={id} href={`#${id}`}>
+            <a
+              key={id}
+              href={`#${id}`}
+              aria-current={id === current ? "true" : undefined}
+              onClick={() => setCurrent(id)}
+            >
               {label}
             </a>
           ))}
@@ -217,9 +256,10 @@ export function App() {
             receives a key.
           </p>
         </div>
+        <ThemeToggle />
       </aside>
 
-      <main className="content">
+      <main className="content" inert={reviewId !== null}>
         <header className="topbar">
           <div>
             <p className="eyebrow">

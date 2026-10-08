@@ -9,6 +9,8 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5",
+    "@fontsource/ibm-plex-sans": "^5",
     "@forge/sdk": "workspace:*",
     "@solana/kit": "8.4.0",
     "react": "19.3.0",

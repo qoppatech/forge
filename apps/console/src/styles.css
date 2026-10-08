@@ -1,5 +1,42 @@
 @import "../../../docs/brand/forge-tokens.css";
 
+/* DESIGN.md: self-host IBM Plex (Open Font License). Latin woff2 only: Bun inlines CSS assets. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2")
+    format("woff2");
+}
+
 *,
 *::before,
 *::after {
@@ -146,16 +183,26 @@ pre {
 }
 
 .rail nav a {
-  padding: var(--forge-space-2) var(--forge-space-3);
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--forge-space-3);
   border-left: 2px solid transparent;
   color: var(--forge-ink);
   font-size: 14px;
   text-decoration: none;
+  transition: background-color var(--forge-duration) ease;
 }
 
 .rail nav a:hover {
+  background: var(--forge-raised);
+}
+
+/* Selected item: copper edge, tinted surface, heavier text (DESIGN.md, Navigation). */
+.rail nav a[aria-current="true"] {
   border-left-color: var(--forge-brand);
   background: var(--forge-brand-wash);
+  font-weight: 500;
 }
 
 .signer-switch {
@@ -386,7 +433,7 @@ input {
 }
 
 .link {
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 var(--forge-space-1);
   border: 0;
   background: none;
@@ -518,6 +565,7 @@ td.actions {
 .notice {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: var(--forge-space-4);
   padding: var(--forge-space-3) var(--forge-space-4);
   border-radius: var(--forge-radius);
@@ -578,6 +626,15 @@ td.actions {
   padding: var(--forge-space-6);
   background: var(--forge-surface);
   box-shadow: -8px 0 24px rgb(23 35 45 / 0.18);
+}
+
+/* Focus moves to the dialog on open; the panel itself needs no ring. */
+.drawer:focus-visible {
+  outline: none;
+}
+
+[data-theme="dark"] .drawer-backdrop {
+  background: rgb(0 0 0 / 0.5);
 }
 
 .drawer-header {
@@ -651,6 +708,15 @@ details {
   font-size: 14px;
 }
 
+summary {
+  cursor: pointer;
+}
+
+summary:focus-visible {
+  outline: 2px solid var(--forge-focus);
+  outline-offset: 3px;
+}
+
 @media (max-width: 1024px) {
   .shell {
     grid-template-columns: 1fr;
@@ -666,8 +732,21 @@ details {
     border-bottom: 1px solid var(--forge-border);
   }
 
+  /* Collapse the rail into a scrollable row rather than dropping navigation. */
   .rail nav {
-    display: none;
+    flex-basis: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .rail nav a {
+    border-bottom: 2px solid transparent;
+    border-left: 0;
+    white-space: nowrap;
+  }
+
+  .rail nav a[aria-current="true"] {
+    border-bottom-color: var(--forge-brand);
   }
 
   .signer-switch {
@@ -684,6 +763,14 @@ details {
 @media (max-width: 768px) {
   .content {
     padding: var(--forge-space-4);
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  .metric-value {
+    font-size: 26px;
   }
 
   .health {
