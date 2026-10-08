@@ -113,7 +113,7 @@ export function Lifecycle() {
                     className={cn(
                       "h-14 transition-colors duration-150 hover:bg-transparent",
                       i === active && "bg-accent hover:bg-accent",
-                      i > active && "text-muted-foreground/50"
+                      i > active && "text-muted-foreground"
                     )}
                   >
                     <TableCell className="font-medium">{ledger.step}</TableCell>
@@ -129,7 +129,6 @@ export function Lifecycle() {
                           variant={
                             i > active ? "outline" : stateVariant[ledger.state]
                           }
-                          className={cn(i > active && "opacity-50")}
                         >
                           {ledger.approvals && ledger.state === "Proposed"
                             ? `${ledger.approvals} approvals`
