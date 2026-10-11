@@ -29,6 +29,7 @@ pub fn create_vault(
         outstanding_limit,
         outstanding_principal: 0,
         disbursement_paused: false,
+        pause_seq: 0,
         bump: ctx.bumps.vault,
     });
     Ok(())

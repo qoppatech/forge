@@ -38,4 +38,8 @@ pub enum ForgeError {
     InvalidBorrower,
     #[msg("Destination does not belong to the borrower")]
     InvalidDestination,
+    #[msg("Withdrawal is in an invalid state for this instruction")]
+    InvalidWithdrawalState,
+    #[msg("Pause request was built against a stale pause sequence")]
+    StalePauseSequence,
 }

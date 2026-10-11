@@ -18,10 +18,12 @@
     "check-types": "nx run-many -t check-types",
     "test": "nx run-many -t test",
     "graph": "nx graph",
-    "dev:banking": "nx dev banking",
     "dev:site": "nx dev @forge/site",
-    "check": "ultracite check apps/site packages *.json *.jsonc *.ts",
-    "fix": "ultracite fix apps/site packages *.json *.jsonc *.ts"
+    "check": "ultracite check apps/site apps/api apps/console apps/localnet packages *.json *.jsonc *.ts",
+    "fix": "ultracite fix apps/site apps/api apps/console apps/localnet packages *.json *.jsonc *.ts",
+    "dev:api": "nx dev @forge/api",
+    "dev:console": "nx dev @forge/console",
+    "e2e": "bun run --cwd packages/sdk build && bun apps/localnet/src/e2e.ts"
   },
   "dependencies": {
     "zod": "catalog:"

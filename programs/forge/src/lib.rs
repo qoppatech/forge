@@ -6,15 +6,16 @@ pub mod instructions;
 pub mod state;
 
 pub(crate) use instructions::{
-    __client_accounts_approve_loan, __client_accounts_create_vault, __client_accounts_draw_loan,
-    __client_accounts_fund_vault, __client_accounts_propose_loan, __client_accounts_repay_loan,
-    __client_accounts_set_disbursement_paused, __client_accounts_withdraw_available,
+    __client_accounts_approve_loan, __client_accounts_approve_withdrawal,
+    __client_accounts_create_vault, __client_accounts_draw_loan, __client_accounts_fund_vault,
+    __client_accounts_propose_loan, __client_accounts_propose_withdrawal,
+    __client_accounts_repay_loan, __client_accounts_set_disbursement_paused,
 };
 pub use instructions::{
-    ApproveLoan, CreateVault, DrawLoan, FundVault, ProposeLoan, RepayLoan, SetDisbursementPaused,
-    WithdrawAvailable,
+    ApproveLoan, ApproveWithdrawal, CreateVault, DrawLoan, FundVault, ProposeLoan,
+    ProposeWithdrawal, RepayLoan, SetDisbursementPaused,
 };
-pub use state::{Loan, LoanState, Vault};
+pub use state::{Loan, LoanState, Vault, Withdrawal, WithdrawalState};
 
 pub use constants::TEST_TOKEN_DECIMALS;
 pub use error::ForgeError;
@@ -69,14 +70,23 @@ pub mod forge {
         instructions::repay_loan(ctx)
     }
 
-    pub fn withdraw_available(ctx: Context<WithdrawAvailable>, amount: u64) -> Result<()> {
-        instructions::withdraw_available(ctx, amount)
+    pub fn propose_withdrawal(
+        ctx: Context<ProposeWithdrawal>,
+        withdrawal_id: [u8; 32],
+        amount: u64,
+    ) -> Result<()> {
+        instructions::propose_withdrawal(ctx, withdrawal_id, amount)
+    }
+
+    pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
+        instructions::approve_withdrawal(ctx)
     }
 
     pub fn set_disbursement_paused(
         ctx: Context<SetDisbursementPaused>,
         paused: bool,
+        expected_seq: u64,
     ) -> Result<()> {
-        instructions::set_disbursement_paused(ctx, paused)
+        instructions::set_disbursement_paused(ctx, paused, expected_seq)
     }
 }

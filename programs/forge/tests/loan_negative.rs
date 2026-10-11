@@ -3,6 +3,7 @@ mod support;
 use anchor_lang::solana_program::{clock::Clock, instruction::Instruction, system_program};
 use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
 use anchor_spl::token::spl_token::{self, instruction as token_instruction};
+use litesvm::types::TransactionResult;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 
@@ -198,25 +199,78 @@ impl LoanFixture {
                 vault: self.f.vault,
             }
             .to_account_metas(None),
-            data: forge::instruction::SetDisbursementPaused { paused }.data(),
+            data: forge::instruction::SetDisbursementPaused {
+                paused,
+                expected_seq: self.vault_state().pause_seq,
+            }
+            .data(),
         }
     }
 
-    fn withdraw_ix(&self, amount: u64) -> Instruction {
+    fn withdrawal_pda(&self, withdrawal_id: [u8; 32]) -> anchor_lang::prelude::Pubkey {
+        anchor_lang::prelude::Pubkey::find_program_address(
+            &[b"withdrawal", self.f.vault.as_ref(), &withdrawal_id],
+            &forge::ID,
+        )
+        .0
+    }
+
+    fn propose_withdrawal_ix(
+        &self,
+        approver: &Keypair,
+        withdrawal_id: [u8; 32],
+        amount: u64,
+    ) -> Instruction {
         Instruction {
             program_id: forge::ID,
-            accounts: forge::accounts::WithdrawAvailable {
-                approver_a: self.f.approvers[0].pubkey(),
-                approver_b: self.f.approvers[1].pubkey(),
+            accounts: forge::accounts::ProposeWithdrawal {
+                approver: approver.pubkey(),
                 vault: self.f.vault,
+                withdrawal: self.withdrawal_pda(withdrawal_id),
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: forge::instruction::ProposeWithdrawal {
+                withdrawal_id,
+                amount,
+            }
+            .data(),
+        }
+    }
+
+    fn approve_withdrawal_ix(&self, approver: &Keypair, withdrawal_id: [u8; 32]) -> Instruction {
+        Instruction {
+            program_id: forge::ID,
+            accounts: forge::accounts::ApproveWithdrawal {
+                approver: approver.pubkey(),
+                vault: self.f.vault,
+                withdrawal: self.withdrawal_pda(withdrawal_id),
                 mint: self.f.mint,
                 vault_token_account: self.f.tokens,
                 treasury_destination: self.f.source,
                 token_program: spl_token::ID,
             }
             .to_account_metas(None),
-            data: forge::instruction::WithdrawAvailable { amount }.data(),
+            data: forge::instruction::ApproveWithdrawal {}.data(),
         }
+    }
+
+    /// Approver A proposes and approver B approves, which executes the withdrawal.
+    #[allow(clippy::result_large_err)] // LiteSVM's public result type, as in `support`.
+    fn withdraw(&mut self, withdrawal_id: [u8; 32], amount: u64) -> TransactionResult {
+        let propose = self.propose_withdrawal_ix(&self.f.approvers[0], withdrawal_id, amount);
+        self.f.execute_as_approver(0, propose, None)?;
+        let approve = self.approve_withdrawal_ix(&self.f.approvers[1], withdrawal_id);
+        self.f.execute_as_approver(1, approve, None)
+    }
+
+    fn withdrawal_state(&self, withdrawal_id: [u8; 32]) -> forge::Withdrawal {
+        let account = self
+            .f
+            .svm
+            .get_account(&self.withdrawal_pda(withdrawal_id))
+            .unwrap();
+        forge::Withdrawal::try_deserialize(&mut account.data.as_slice()).unwrap()
     }
 
     fn loan_state(&self) -> forge::Loan {
@@ -490,11 +544,7 @@ fn draw_loan_rejects_expiry_pause_liquidity_and_account_substitution() {
     let mut underfunded = LoanFixture::new();
     underfunded.propose_default();
     underfunded.approve_both();
-    let withdraw_all = underfunded.withdraw_ix(FUNDING);
-    underfunded
-        .f
-        .execute_as_approver(0, withdraw_all, Some(1))
-        .unwrap();
+    underfunded.withdraw([5; 32], FUNDING).unwrap();
     let borrower = underfunded.borrower.insecure_clone();
     underfunded.expect_custom_rollback(underfunded.draw_ix(), &borrower, &[], 6015);
 
@@ -745,23 +795,70 @@ fn withdrawal_and_pause_require_both_approvers_and_fixed_destination() {
 
     lf.mint_to_source(1);
     lf.f.execute(lf.f.fund(1)).unwrap();
+    let approver_a = lf.f.approvers[0].insecure_clone();
+    let approver_b = lf.f.approvers[1].insecure_clone();
+    let first = [21; 32];
+
+    let outsider_proposal = lf.propose_withdrawal_ix(&outsider_signer, first, 1);
+    custom_error(
+        lf.f.execute_as(&outsider_signer, outsider_proposal, &[]),
+        6004,
+    );
+    let zero = lf.propose_withdrawal_ix(&approver_a, first, 0);
+    custom_error(lf.f.execute_as(&approver_a, zero, &[]), 6003);
+
+    let propose = lf.propose_withdrawal_ix(&approver_a, first, 1);
+    lf.f.execute_as(&approver_a, propose, &[]).unwrap();
+    let proposed = lf.withdrawal_state(first);
+    assert_eq!(proposed.approvals, [true, false]);
+    assert_eq!(proposed.state, forge::WithdrawalState::Proposed);
+
+    let self_approval = lf.approve_withdrawal_ix(&approver_a, first);
+    custom_error(lf.f.execute_as(&approver_a, self_approval, &[]), 6011);
+    let outsider_approval = lf.approve_withdrawal_ix(&outsider_signer, first);
+    custom_error(
+        lf.f.execute_as(&outsider_signer, outsider_approval, &[]),
+        6004,
+    );
+
     let other_destination = create_token_account(
         &mut lf.f.svm,
         &lf.f.treasury,
         lf.f.mint,
         lf.f.treasury.pubkey(),
     );
-    let mut wrong_destination = lf.withdraw_ix(1);
-    wrong_destination.accounts[4].pubkey = other_destination;
-    custom_error(
-        lf.f.execute_as_approver(0, wrong_destination, Some(1)),
-        2012,
+    let mut wrong_destination = lf.approve_withdrawal_ix(&approver_b, first);
+    wrong_destination.accounts[5].pubkey = other_destination;
+    custom_error(lf.f.execute_as(&approver_b, wrong_destination, &[]), 2012);
+
+    let before = (lf.f.balance(lf.f.tokens), lf.f.balance(lf.f.source));
+    let approve = lf.approve_withdrawal_ix(&approver_b, first);
+    lf.f.execute_as(&approver_b, approve, &[]).unwrap();
+    assert_eq!(
+        (lf.f.balance(lf.f.tokens), lf.f.balance(lf.f.source)),
+        (before.0 - 1, before.1 + 1)
+    );
+    assert_eq!(
+        lf.withdrawal_state(first).state,
+        forge::WithdrawalState::Executed
     );
 
-    custom_error(
-        lf.f.execute_as_approver(0, lf.withdraw_ix(FUNDING + 2), Some(1)),
-        6015,
+    // Replays of either step fail without moving funds again.
+    let after = (lf.f.balance(lf.f.tokens), lf.f.balance(lf.f.source));
+    let replay_approval = lf.approve_withdrawal_ix(&approver_b, first);
+    custom_error(lf.f.execute_as(&approver_b, replay_approval, &[]), 6018);
+    let replay_proposal = lf.propose_withdrawal_ix(&approver_a, first, 1);
+    custom_error(lf.f.execute_as(&approver_a, replay_proposal, &[]), 0);
+    assert_eq!(
+        (lf.f.balance(lf.f.tokens), lf.f.balance(lf.f.source)),
+        after
     );
+
+    let oversized = [22; 32];
+    let propose = lf.propose_withdrawal_ix(&approver_a, oversized, FUNDING + 2);
+    lf.f.execute_as(&approver_a, propose, &[]).unwrap();
+    let approve = lf.approve_withdrawal_ix(&approver_b, oversized);
+    custom_error(lf.f.execute_as(&approver_b, approve, &[]), 6015);
 
     lf.propose_default();
     lf.approve_both();
@@ -769,10 +866,37 @@ fn withdrawal_and_pause_require_both_approvers_and_fixed_destination() {
     let unpause = lf.pause_ix(false);
     lf.f.execute_as_approver(0, unpause, Some(1)).unwrap();
     lf.f.execute_as(&lf.borrower, lf.draw_ix(), &[]).unwrap();
+
+    // Liquidity is rechecked at approval: receivables do not count as cash.
     let cash = lf.f.balance(lf.f.tokens);
-    custom_error(
-        lf.f.execute_as_approver(0, lf.withdraw_ix(cash + 1), Some(1)),
-        6015,
-    );
+    let beyond_cash = [23; 32];
+    let propose = lf.propose_withdrawal_ix(&approver_b, beyond_cash, cash + 1);
+    lf.f.execute_as(&approver_b, propose, &[]).unwrap();
+    let approve = lf.approve_withdrawal_ix(&approver_a, beyond_cash);
+    custom_error(lf.f.execute_as(&approver_a, approve, &[]), 6015);
     lf.f.execute_as(&lf.borrower, lf.repay_ix(), &[]).unwrap();
+    let approve = lf.approve_withdrawal_ix(&approver_a, beyond_cash);
+    lf.f.execute_as(&approver_a, approve, &[]).unwrap();
+    assert_eq!(lf.f.balance(lf.f.tokens), cash + PAYOFF - (cash + 1));
+}
+
+#[test]
+fn pause_rejects_stale_sequence() {
+    let mut lf = LoanFixture::new();
+    let stale_unpause = lf.pause_ix(false);
+    let pause = lf.pause_ix(true);
+    lf.f.execute_as_approver(0, pause, Some(1)).unwrap();
+    let paused = lf.vault_state();
+    assert!(paused.disbursement_paused);
+    assert_eq!(paused.pause_seq, 1);
+
+    // A request signed before the newer pause cannot undo it.
+    custom_error(lf.f.execute_as_approver(0, stale_unpause, Some(1)), 6019);
+    assert_eq!(lf.vault_state(), paused);
+
+    let unpause = lf.pause_ix(false);
+    lf.f.execute_as_approver(0, unpause, Some(1)).unwrap();
+    let resumed = lf.vault_state();
+    assert!(!resumed.disbursement_paused);
+    assert_eq!(resumed.pause_seq, 2);
 }

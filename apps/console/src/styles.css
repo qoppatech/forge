@@ -1,0 +1,779 @@
+@import "../../../docs/brand/forge-tokens.css";
+
+/* DESIGN.md: self-host IBM Plex (Open Font License). Latin woff2 only: Bun inlines CSS assets. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2")
+    format("woff2");
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--forge-canvas);
+  color: var(--forge-ink);
+  font: 400 16px/1.5 var(--forge-font);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 500;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+h3 {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  margin: var(--forge-space-6) 0 var(--forge-space-2);
+}
+
+code,
+pre,
+.mono,
+.id {
+  font-family: var(--forge-mono);
+  font-size: 13px;
+}
+
+pre {
+  overflow: auto;
+  max-height: 240px;
+  padding: var(--forge-space-3);
+  background: var(--forge-raised);
+  border-radius: var(--forge-radius);
+}
+
+.numeric,
+.num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.muted,
+.fine,
+.unit {
+  color: var(--forge-muted);
+}
+
+.fine {
+  font-size: 13px;
+  margin: var(--forge-space-2) 0 0;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--forge-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.boot {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: var(--forge-space-8);
+}
+
+/* Layout: 224px navigation rail + flexible content (DESIGN.md). */
+.shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-6);
+  height: 100vh;
+  padding: var(--forge-space-6) var(--forge-space-4);
+  background: var(--forge-surface);
+  border-right: 1px solid var(--forge-border);
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--forge-space-3);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  background: var(--forge-brand);
+  clip-path: polygon(
+    0 0,
+    85% 0,
+    100% 15%,
+    100% 30%,
+    38% 30%,
+    38% 45%,
+    80% 45%,
+    80% 62%,
+    38% 62%,
+    38% 100%,
+    0 100%
+  );
+}
+
+.rail nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.rail nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--forge-space-3);
+  border-left: 2px solid transparent;
+  color: var(--forge-ink);
+  font-size: 14px;
+  text-decoration: none;
+  transition: background-color var(--forge-duration) ease;
+}
+
+.rail nav a:hover {
+  background: var(--forge-raised);
+}
+
+/* Selected item: copper edge, tinted surface, heavier text (DESIGN.md, Navigation). */
+.rail nav a[aria-current="true"] {
+  border-left-color: var(--forge-brand);
+  background: var(--forge-brand-wash);
+  font-weight: 500;
+}
+
+.signer-switch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-2);
+  margin-top: auto;
+}
+
+.role {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: var(--forge-space-2) var(--forge-space-3);
+  border: 1px solid var(--forge-border);
+  border-left: 2px solid transparent;
+  border-radius: var(--forge-radius);
+  background: transparent;
+  color: var(--forge-ink);
+  font: 500 14px/1.3 var(--forge-font);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--forge-duration) ease;
+}
+
+.role .mono {
+  color: var(--forge-muted);
+  font-size: 12px;
+}
+
+.role.active {
+  border-left-color: var(--forge-brand);
+  background: var(--forge-brand-wash);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-6);
+  padding: var(--forge-space-8);
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--forge-space-4);
+}
+
+.health {
+  display: flex;
+  gap: var(--forge-space-6);
+  margin: 0;
+}
+
+.health dt,
+.facts dt,
+.metric-label {
+  color: var(--forge-muted);
+  font-size: 12px;
+}
+
+.health dd {
+  margin: 0;
+  font-size: 14px;
+}
+
+.section {
+  padding: var(--forge-space-6);
+  background: var(--forge-surface);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--forge-radius);
+  scroll-margin-top: var(--forge-space-4);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--forge-space-4);
+  margin-bottom: var(--forge-space-4);
+}
+
+.metrics,
+.balances {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--forge-space-4);
+}
+
+.metric,
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-1);
+  padding: var(--forge-space-4);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--forge-radius);
+}
+
+.metric-value {
+  font-size: 32px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.metric-unit {
+  color: var(--forge-muted);
+  font-size: 12px;
+}
+
+.strong {
+  font-weight: 500;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--forge-space-3) var(--forge-space-6);
+  margin: var(--forge-space-4) 0 0;
+}
+
+.facts dd {
+  margin: 0;
+  font-size: 14px;
+}
+
+.facts.stacked {
+  grid-template-columns: 1fr;
+}
+
+.facts.stacked > div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--forge-space-3);
+  padding: var(--forge-space-2) 0;
+  border-bottom: 1px solid var(--forge-border);
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--forge-space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-3);
+  padding: var(--forge-space-4);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--forge-radius);
+}
+
+.card h3 {
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--forge-space-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-1);
+}
+
+.field-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.field-hint {
+  color: var(--forge-muted);
+  font-size: 12px;
+}
+
+input {
+  min-height: 44px;
+  padding: 0 var(--forge-space-3);
+  border: 1px solid var(--forge-control-border);
+  border-radius: var(--forge-radius);
+  background: var(--forge-surface);
+  color: var(--forge-ink);
+  font: 400 14px/1.4 var(--forge-font);
+  font-variant-numeric: tabular-nums;
+}
+
+.primary,
+.secondary {
+  min-height: 44px;
+  padding: 0 var(--forge-space-4);
+  border-radius: var(--forge-radius);
+  font: 500 14px/1.4 var(--forge-font);
+  cursor: pointer;
+  transition: background-color var(--forge-duration) ease;
+}
+
+.primary {
+  border: 1px solid transparent;
+  background: var(--forge-brand);
+  color: var(--forge-on-brand);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--forge-brand-hover);
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondary {
+  border: 1px solid var(--forge-control-border);
+  background: transparent;
+  color: var(--forge-ink);
+}
+
+.secondary:hover {
+  background: var(--forge-raised);
+}
+
+.link {
+  min-height: 44px;
+  padding: 0 var(--forge-space-1);
+  border: 0;
+  background: none;
+  color: var(--forge-brand);
+  font: 500 14px/1.4 var(--forge-font);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.id {
+  padding: 2px var(--forge-space-1);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--forge-radius-badge);
+  background: var(--forge-raised);
+  color: var(--forge-ink);
+  cursor: copy;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--forge-space-1);
+  padding: 2px var(--forge-space-2);
+  border-radius: var(--forge-radius-badge);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-success {
+  color: var(--forge-success);
+  background: var(--forge-success-bg);
+}
+.badge-warning {
+  color: var(--forge-warning);
+  background: var(--forge-warning-bg);
+}
+.badge-error {
+  color: var(--forge-error);
+  background: var(--forge-error-bg);
+}
+.badge-info {
+  color: var(--forge-info);
+  background: var(--forge-info-bg);
+}
+.badge-neutral {
+  color: var(--forge-muted);
+  background: var(--forge-raised);
+}
+
+.tag {
+  margin-left: var(--forge-space-2);
+  padding: 0 var(--forge-space-1);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--forge-radius-badge);
+  color: var(--forge-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th {
+  padding: var(--forge-space-2) var(--forge-space-3);
+  border-bottom: 1px solid var(--forge-control-border);
+  color: var(--forge-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+td {
+  height: 52px;
+  padding: var(--forge-space-2) var(--forge-space-3);
+  border-bottom: 1px solid var(--forge-border);
+  vertical-align: middle;
+}
+
+th.num,
+td.num {
+  text-align: right;
+}
+
+td.actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.signer {
+  display: inline-block;
+  margin-right: var(--forge-space-2);
+  color: var(--forge-muted);
+  font-size: 13px;
+}
+
+.signer.done {
+  color: var(--forge-success);
+}
+
+.signer.done::before {
+  content: "✓ ";
+}
+
+.empty {
+  padding: var(--forge-space-6);
+  border: 1px dashed var(--forge-control-border);
+  border-radius: var(--forge-radius);
+  color: var(--forge-muted);
+}
+
+.empty strong {
+  color: var(--forge-ink);
+}
+
+.empty p {
+  margin: var(--forge-space-2) 0 0;
+}
+
+.notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--forge-space-4);
+  padding: var(--forge-space-3) var(--forge-space-4);
+  border-radius: var(--forge-radius);
+  font-size: 14px;
+}
+
+.notice-error {
+  color: var(--forge-error);
+  background: var(--forge-error-bg);
+}
+.notice-info {
+  color: var(--forge-info);
+  background: var(--forge-info-bg);
+}
+
+.exceptions {
+  margin: var(--forge-space-4) 0;
+  padding: var(--forge-space-3) var(--forge-space-4);
+  border-left: 2px solid var(--forge-error);
+  background: var(--forge-error-bg);
+}
+
+.exceptions h3 {
+  margin-top: 0;
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.events li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--forge-space-2);
+  padding: var(--forge-space-2) 0;
+  border-bottom: 1px solid var(--forge-border);
+}
+
+/* Review drawer */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(23 35 45 / 0.36);
+}
+
+.drawer {
+  width: min(560px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--forge-space-6);
+  background: var(--forge-surface);
+  box-shadow: -8px 0 24px rgb(23 35 45 / 0.18);
+}
+
+/* Focus moves to the dialog on open; the panel itself needs no ring. */
+.drawer:focus-visible {
+  outline: none;
+}
+
+[data-theme="dark"] .drawer-backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--forge-space-4);
+}
+
+.reason {
+  margin: var(--forge-space-2) 0 0;
+  font-size: 14px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--forge-space-1);
+  margin: var(--forge-space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.steps li {
+  padding-top: var(--forge-space-2);
+  border-top: 3px solid var(--forge-border);
+  color: var(--forge-muted);
+}
+
+.steps li.done {
+  border-top-color: var(--forge-success);
+  color: var(--forge-ink);
+}
+
+.signers,
+.attempts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--forge-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.signers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--forge-space-2);
+}
+
+.attempts li {
+  padding: var(--forge-space-2) 0;
+  border-bottom: 1px solid var(--forge-border);
+}
+
+.drawer-actions {
+  display: flex;
+  gap: var(--forge-space-3);
+  margin: var(--forge-space-4) 0;
+}
+
+.mono-facts dd {
+  font-size: 13px;
+}
+
+details {
+  margin-top: var(--forge-space-4);
+  font-size: 14px;
+}
+
+summary {
+  cursor: pointer;
+}
+
+summary:focus-visible {
+  outline: 2px solid var(--forge-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1024px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .rail {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--forge-border);
+  }
+
+  /* Collapse the rail into a scrollable row rather than dropping navigation. */
+  .rail nav {
+    flex-basis: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .rail nav a {
+    border-bottom: 2px solid transparent;
+    border-left: 0;
+    white-space: nowrap;
+  }
+
+  .rail nav a[aria-current="true"] {
+    border-bottom-color: var(--forge-brand);
+  }
+
+  .signer-switch {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 0;
+  }
+
+  .content {
+    padding: var(--forge-space-6);
+  }
+}
+
+@media (max-width: 768px) {
+  .content {
+    padding: var(--forge-space-4);
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  .metric-value {
+    font-size: 26px;
+  }
+
+  .health {
+    flex-wrap: wrap;
+  }
+}

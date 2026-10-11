@@ -14,6 +14,9 @@
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },
+  "dependencies": {
+    "@solana/kit": "8.4.0"
+  },
   "devDependencies": {
     "@forge/config": "workspace:*",
     "@types/bun": "^1.3.13",

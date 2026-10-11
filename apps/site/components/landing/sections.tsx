@@ -10,7 +10,6 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { Wordmark } from "@/lib/layout.shared";
 import { repoUrl } from "@/lib/shared";
-import { cn } from "@/lib/utils";
 
 import { controls, faqs, principles, status } from "./content";
 import { Container, Eyebrow, Section, SectionTitle } from "./section";
@@ -142,12 +141,13 @@ export function Status() {
 
 export function FinalCta() {
   return (
-    <section className="border-border bg-foreground text-background dark:bg-card dark:text-foreground border-t py-24 md:py-32">
+    // Dark tokens in both themes: copper is not paired with graphite (DESIGN.md, Logo directions).
+    <section className="dark border-border bg-card text-foreground border-t py-24 md:py-32">
       <Container>
         <h2 className="max-w-4xl text-[40px] leading-[1.08] font-light tracking-[-0.025em] text-balance md:text-[72px]">
           Read the rules before you trust them.
         </h2>
-        <p className="text-background/70 dark:text-muted-foreground mt-6 max-w-xl text-lg">
+        <p className="text-muted-foreground mt-6 max-w-xl text-lg">
           The documentation covers the lifecycle, the accounts, every error and
           every limit of the sandbox.
         </p>
@@ -158,10 +158,7 @@ export function FinalCta() {
           </Link>
           <a
             href={repoUrl}
-            className={cn(
-              buttonVariants({ size: "lg", variant: "outline" }),
-              "border-background/40 text-background hover:bg-background/10 dark:border-control dark:text-foreground dark:hover:bg-muted"
-            )}
+            className={buttonVariants({ size: "lg", variant: "outline" })}
           >
             View source on GitHub
           </a>

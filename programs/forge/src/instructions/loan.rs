@@ -159,8 +159,11 @@ pub fn repay_loan(ctx: Context<RepayLoan>) -> Result<()> {
     Ok(())
 }
 
-pub fn withdraw_available(ctx: Context<WithdrawAvailable>, amount: u64) -> Result<()> {
-    require!(amount > 0, ForgeError::InvalidAmount);
+pub fn set_disbursement_paused(
+    ctx: Context<SetDisbursementPaused>,
+    paused: bool,
+    expected_seq: u64,
+) -> Result<()> {
     require!(
         ctx.accounts.approver_a.key() != ctx.accounts.approver_b.key(),
         ForgeError::InvalidApprovers
@@ -177,52 +180,16 @@ pub fn withdraw_available(ctx: Context<WithdrawAvailable>, amount: u64) -> Resul
                 .contains(&ctx.accounts.approver_b.key()),
         ForgeError::UnauthorizedApprover
     );
+    let vault = &mut ctx.accounts.vault;
     require!(
-        ctx.accounts.vault_token_account.amount >= amount,
-        ForgeError::InsufficientLiquidity
+        vault.pause_seq == expected_seq,
+        ForgeError::StalePauseSequence
     );
-
-    let vault = &ctx.accounts.vault;
-    let signer_seeds: &[&[u8]] = &[
-        b"vault",
-        vault.treasury.as_ref(),
-        &vault.vault_id,
-        &[vault.bump],
-    ];
-    token::transfer_checked(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.key(),
-            TransferChecked {
-                from: ctx.accounts.vault_token_account.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.treasury_destination.to_account_info(),
-                authority: vault.to_account_info(),
-            },
-            &[signer_seeds],
-        ),
-        amount,
-        ctx.accounts.mint.decimals,
-    )
-}
-
-pub fn set_disbursement_paused(ctx: Context<SetDisbursementPaused>, paused: bool) -> Result<()> {
-    require!(
-        ctx.accounts.approver_a.key() != ctx.accounts.approver_b.key(),
-        ForgeError::InvalidApprovers
-    );
-    require!(
-        ctx.accounts
-            .vault
-            .approvers
-            .contains(&ctx.accounts.approver_a.key())
-            && ctx
-                .accounts
-                .vault
-                .approvers
-                .contains(&ctx.accounts.approver_b.key()),
-        ForgeError::UnauthorizedApprover
-    );
-    ctx.accounts.vault.disbursement_paused = paused;
+    vault.disbursement_paused = paused;
+    vault.pause_seq = vault
+        .pause_seq
+        .checked_add(1)
+        .ok_or(ForgeError::MathOverflow)?;
     Ok(())
 }
 
@@ -341,35 +308,6 @@ pub struct RepayLoan<'info> {
         token::authority = vault
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
-}
-
-#[derive(Accounts)]
-pub struct WithdrawAvailable<'info> {
-    pub approver_a: Signer<'info>,
-    pub approver_b: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [b"vault", vault.treasury.as_ref(), &vault.vault_id],
-        bump = vault.bump,
-        has_one = mint
-    )]
-    pub vault: Account<'info, Vault>,
-    pub mint: Account<'info, Mint>,
-    #[account(
-        mut,
-        address = vault.token_account,
-        token::mint = mint,
-        token::authority = vault
-    )]
-    pub vault_token_account: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        address = vault.treasury_destination,
-        token::mint = mint,
-        token::authority = vault.treasury
-    )]
-    pub treasury_destination: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
 }
 

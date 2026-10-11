@@ -104,3 +104,64 @@ An optional TypeScript seed client was investigated using Node 24.20.0 / npm 11.
 - `@solana/web3.js@1.99.0 → jayson@4.3.0 → stream-json@1.9.1 / uuid@8.3.2`: [nested-input DoS](https://github.com/advisories/GHSA-528h-pc64-c93x), [buffer bounds](https://github.com/advisories/GHSA-w5hq-g745-h8pq).
 
 No blanket override, forced downgrade, audit suppression or risk waiver was applied. The supervisor approved a smaller milestone: retain the existing Rust/LiteSVM fixture and defer the network seed client until deployment approval. Candidate package manifests, npm lockfile, TypeScript configuration and draft seed test were removed; **no JavaScript application/client dependencies are retained**. Ignored `node_modules/` remains an unused local investigation artifact, not a shipped dependency. Node was removed from the development shell. TypeScript typecheck/client tests were not completed and are not claimed as evidence; SDK/API work remains milestone 3. Generated IDL/TS types remain build outputs only.
+
+## Milestones 3–6: SDK, keyless API, reconciler and end-to-end flow — 5 October 2026
+
+Scope: issues #1 (local-validator gate), #3 (SDK), #4 (keyless orchestration), #5 (finalized reconciliation) and #6 (end-to-end flow). Decisions are recorded in `docs/adr/0001`–`0003`. Everything ran on a disposable loopback stack, with no Devnet or mainnet deployment:
+
+- `solana-test-validator` 4.0.3 with the built program loaded at genesis (`--bpf-program`, `--reset`);
+- PostgreSQL 17.11, both started by `scripts/localnet.sh`.
+
+### Automated checks
+
+| Command | Result |
+| --- | --- |
+| `bash scripts/build.sh && cargo test --locked -p forge` | 19 passed (10 vault, 1 lifecycle, 8 negative), including withdrawal replay and stale-pause tests |
+| `cargo fmt --all -- --check`, `cargo clippy --locked -p forge --all-targets -- -D warnings` | Passed |
+| `bun run --cwd packages/sdk build && bun test` (packages/sdk) | 16 passed: IDL drift, codec round-trips, plan verification, memo uniqueness, signature merge and forgery rejection, error classification, views, JSON-safe timestamps |
+| `bun test` (apps/api, local PostgreSQL) | 22 passed: auth isolation, idempotency 409, persist-before-send, partial signatures, confirmed→finalized, proven expiry and re-prepare, RPC outage, concurrent workers, replay classification, direct calls and donations, wallet self-broadcast, memo matching, pruned cursors, webhooks |
+| `bun audit` | 17 advisories, all in pre-existing dev tooling (`nx` → axios/smol-toml; site `shadcn`/`serve` and `ultracite` → braces/brace-expansion). None reach `@solana/kit` or the new runtime packages. |
+
+### End-to-end run (`bun run e2e`)
+
+The independent treasury, approver A, approver B, borrower and outsider wallets each signed only their own transactions, after `verifyPlan` decoded the bytes. The API and worker ran as separate processes and never received a key. Result: **25 checks passed**; evidence is written to the ignored `.local/demo/e2e-evidence.json`.
+
+| Check | Observed |
+| --- | --- |
+| #1 vault on a local validator | Created with immutable approvers; funded with exactly 10,000,000,000 base units |
+| #1 unauthorized direct SPL withdrawal | Rejected for both outsider and treasury (`OwnerMismatch`); balances unchanged |
+| Premature draw | API refused (409); direct program call rejected (`InvalidLoanState` 6010) |
+| Concurrent duplicate approval by approver A | One finalized; the other resolved `already_applied` (`AlreadyApproved`) |
+| Wrong signer / wrong destination | `InvalidBorrower` 6016 / `InvalidDestination` 6017, no side effects |
+| Draw then repay | Vault cash 10,000 → 5,000 → 10,100; receivable 0 → 5,000 → 0 |
+| Repeated draw / repayment | Rejected (6010); cross-institution read and write → 404 |
+| Withdrawal proposal | Proposed by A, executed on B's approval; 100 to the treasury destination |
+| Pause ordering | Stale unpause failed (`StalePauseSequence` 6019); fresh unpause applied at `pause_seq` 2 |
+| Direct token donation | `unexpected_deposit` exception plus suspense posting; no loan change |
+| Wallet self-broadcast | Matched by message hash and finalized |
+| Worker down while a transaction landed | Finalized after restart |
+| Unsigned plan | Expired only after finalized height passed `lastValidBlockHeight`; attempt 2 got a new blockhash and finalized |
+| Full replay from empty cursors | No duplicate postings, events, exceptions or webhooks (17 / 14 / 1 / 18) |
+| Statement | Balanced; every posting carries signature and slot; ledger cash 10,005 equals finalized chain cash |
+| Webhooks | 18 events delivered with 18 unique stable ids |
+
+### Defects found by the run and fixed
+
+1. **Identical messages share one transaction id.** Two approvals planned in the same slot compiled to byte-identical messages. Ed25519 is deterministic, so they collided on the attempt signature. Two identical funding requests would silently have executed once.
+   - Fix: every plan now carries an SPL Memo `forge:op:<operationId>:<attemptNo>` (ADR 0002).
+   - The reconciler also matches by memo.
+2. **Ledger pruning stalls cursors.** `solana-test-validator` keeps 10,000 shreds by default, about 11 minutes here. Once the cursor's transaction was purged, `getSignaturesForAddress(until)` failed with "not found" and the token-account cursor stopped advancing.
+   - The indexer now falls back to a slot-bounded scan.
+   - The tracker indexes the vault before declaring a live attempt expired.
+   - The local validator keeps 500k shreds (several hours; `FORGE_LEDGER_SHREDS` overrides).
+   - Worker heartbeats now keep each stage's last error until that stage recovers.
+3. **Timestamps serialized as `{}`.** Found while driving the console against the live stack. `toJsonSafe` walked a `Date` like a plain object, so every API timestamp came out as `{}` and the console showed the worker as "stale NaNs". Dates now serialize as ISO-8601, and tests assert it.
+   - After the fix, a loan was proposed and signed in the console as approver A and finalized at slot 1388. The console showed "0 of 2 approvals" and "Proposed" as separate states.
+4. The run also corrected a wrong expectation (destination substitution reports 6017, as `loan_negative.rs` already asserts).
+
+### Remaining limits
+
+- `solana-test-validator` binds RPC (8899), websocket (8900) and faucet (9900) to `0.0.0.0` and has no flag to restrict them. The tested NixOS host firewall blocks inbound connections.
+- Expiry proofs and indexer cursors need an RPC node that retains history beyond worker downtime. Absence of a signature on a pruned node proves nothing; production needs history-retaining RPC providers.
+- The console signs with browser-held demonstration keys served from `.local/demo/session.json` by the console's development server. There is no wallet adapter or custody integration.
+- Devnet and mainnet deployment remain unapproved.
