@@ -1,6 +1,7 @@
 import { idl } from "./idl.js";
 import { INIT_KINDS } from "./intents.js";
 import type { IntentKind } from "./intents.js";
+import { stableStringify } from "./json.js";
 
 /**
  * How an orchestrator should treat a failed Forge transaction:
@@ -107,7 +108,8 @@ export function decodeTransactionError(
     const kind = kinds[instructionIndex];
     const code = customCode(detail);
     if (code === undefined) {
-      const name = typeof detail === "string" ? detail : JSON.stringify(detail);
+      const name =
+        typeof detail === "string" ? detail : stableStringify(detail);
       return {
         category: "invalid_accounts",
         instructionIndex,
@@ -148,5 +150,10 @@ export function decodeTransactionError(
     const name = TOKEN_ERRORS[code] ?? `CustomError(${code})`;
     return { category: "token", code, instructionIndex, message: name, name };
   }
-  return { category: "unknown", message: JSON.stringify(err), name: "Unknown" };
+  // RPC error payloads are untyped and may carry bigints, which JSON.stringify rejects.
+  return {
+    category: "unknown",
+    message: stableStringify(err),
+    name: "Unknown",
+  };
 }

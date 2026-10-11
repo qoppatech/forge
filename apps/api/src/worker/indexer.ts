@@ -22,12 +22,32 @@ export class Indexer {
     this.reconciler = reconciler;
   }
 
+  /**
+   * Watches vaults that exist on chain or whose creation can still land; a registration whose
+   * create operation provably expired or failed costs nothing until it is re-prepared. A vault
+   * that fails to sync is reported but never stops the others.
+   */
   async syncAll(): Promise<void> {
-    const vaults = await this
-      .db`SELECT address FROM vaults ORDER BY created_at`;
+    const vaults = await this.db`
+      SELECT v.address FROM vaults v
+      WHERE v.onchain OR EXISTS (
+        SELECT 1 FROM operations o
+        WHERE o.vault = v.address AND o.kind = 'create_vault' AND o.status NOT IN ('expired', 'failed'))
+      ORDER BY v.created_at`;
+    const failures: unknown[] = [];
     for (const vault of vaults) {
-      // oxlint-disable-next-line no-await-in-loop -- vaults sync one at a time so reconciler transactions never race each other
-      await this.syncVault(vault.address);
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- vaults sync one at a time so reconciler transactions never race each other
+        await this.syncVault(vault.address);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `${failures.length} vault(s) failed to sync: ${(failures[0] as Error).message}`
+      );
     }
   }
 

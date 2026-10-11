@@ -78,6 +78,8 @@ export class Webhooks {
           "forge-signature": `t=${timestamp},v1=${await hmac(event.webhook_secret, `${timestamp}.${body}`)}`,
         },
         method: "POST",
+        // Only the operator-configured URL is approved: a receiver's redirect is a failed delivery.
+        redirect: "manual",
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) {

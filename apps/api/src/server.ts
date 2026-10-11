@@ -5,7 +5,13 @@ import { authenticate } from "./auth";
 import type { Institution } from "./auth";
 import type { Chain } from "./chain";
 import type { Db } from "./db";
-import { errorResponse, idempotencyKey, json, readBody } from "./http";
+import {
+  errorResponse,
+  idempotencyKey,
+  json,
+  MAX_BODY_BYTES,
+  readBody,
+} from "./http";
 import { Operations } from "./operations";
 import { Reads } from "./reads";
 import { Requests, schemas } from "./requests";
@@ -72,6 +78,7 @@ export function createServer(deps: {
     fetch: () =>
       json({ error: { code: "not_found", message: "Route not found" } }, 404),
     hostname: deps.host,
+    maxRequestBodySize: MAX_BODY_BYTES,
     port: deps.port,
     routes: {
       "/health": { GET: () => json({ service: "forge-api", status: "ok" }) },

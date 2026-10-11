@@ -28,6 +28,33 @@ import { conflict, HttpError, notFound } from "./http";
 const base58Bytes = getBase58Encoder();
 const base58String = getBase58Decoder();
 
+/** Vaults an institution may have awaiting creation at once; each one is watched by the worker. */
+export const MAX_PENDING_VAULTS = 20;
+
+/**
+ * Rejects making another not-yet-on-chain vault watchable past the per-institution cap. Runs
+ * inside the transaction that commits the create_vault attempt; the advisory lock serialises
+ * concurrent creations and re-preparations for one institution.
+ */
+export async function assertPendingVaultCapacity(
+  tx: Db,
+  institutionId: string
+): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(hashtext(${`pending-vaults:${institutionId}`}))`;
+  const [{ pending }] = await tx`
+    SELECT count(*)::int AS pending FROM vaults v
+    WHERE v.institution_id = ${institutionId} AND NOT v.onchain AND EXISTS (
+      SELECT 1 FROM operations o WHERE o.vault = v.address AND o.kind = 'create_vault'
+        AND o.status NOT IN ('expired', 'failed'))`;
+  if (pending >= MAX_PENDING_VAULTS) {
+    throw new HttpError(
+      429,
+      "too_many_pending_vaults",
+      `At most ${MAX_PENDING_VAULTS} vaults may await confirmation`
+    );
+  }
+}
+
 export type OperationStatus =
   | "prepared"
   | "submitted"
@@ -362,6 +389,10 @@ export class Operations {
       if (!operation) {
         throw notFound("Operation");
       }
+      if (operation.status !== "prepared" && operation.status !== "submitted") {
+        // Already applied (possibly by another transaction) or closed: never land it twice.
+        throw conflict("operation_closed", `Operation is ${operation.status}`);
+      }
       const [attempt] = (await tx`
         SELECT * FROM tx_attempts WHERE operation_id = ${operationId}
           AND status IN ('awaiting_signatures', 'live')
@@ -454,6 +485,9 @@ export class Operations {
     );
     try {
       await this.db.begin(async (tx) => {
+        if (operation.kind === "create_vault") {
+          await assertPendingVaultCapacity(tx as Db, institution.id);
+        }
         await insertAttempt(tx as Db, operationId, attemptNo, plan);
         const updated = await tx`
           UPDATE operations SET status = 'prepared', status_reason = NULL, updated_at = now()

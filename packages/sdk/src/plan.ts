@@ -43,11 +43,13 @@ export function operationMemo(operationId: string, attemptNo: number): string {
   return `forge:op:${operationId}:${attemptNo}`;
 }
 
+/** Parses an operation memo. Memos are untrusted chain data, so only a canonical UUID and an
+ *  int32-range attempt number are accepted; anything else is treated as no memo. */
 export function parseOperationMemo(
   memo: string
 ): { operationId: string; attemptNo: number } | undefined {
   const groups =
-    /^forge:op:(?<operationId>[0-9a-f-]{36}):(?<attemptNo>\d+)$/u.exec(
+    /^forge:op:(?<operationId>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(?<attemptNo>[1-9]\d{0,8})$/u.exec(
       memo
     )?.groups;
   if (groups?.operationId === undefined || groups.attemptNo === undefined) {
@@ -187,6 +189,35 @@ export function inspectTransaction(
 }
 
 /**
+ * The field checks in {@link verifyPlan} cannot see the message version, a v1 transaction
+ * config (priority fee, compute limits) or extra accounts, so the bytes must also equal the
+ * canonical compilation of the intent.
+ */
+function canonicalProblem(
+  transaction: Transaction,
+  intent: ForgeIntent,
+  blockhash: string,
+  memo: string | null | undefined
+): string | undefined {
+  try {
+    const canonical = compileIntentTransaction(
+      intent,
+      // Only the blockhash is part of the message; the height never reaches the bytes.
+      { blockhash, lastValidBlockHeight: 0n },
+      { memo: memo ?? undefined }
+    );
+    return bytesEqual(
+      new Uint8Array(canonical.messageBytes),
+      new Uint8Array(transaction.messageBytes)
+    )
+      ? undefined
+      : "Message bytes differ from the canonical v0 compilation of the intent";
+  } catch (error) {
+    return `Intent does not compile: ${(error as Error).message}`;
+  }
+}
+
+/**
  * Signer-side review: the plan's transaction must contain exactly the Forge instruction the
  * intent describes, paid for by the first required signer. Returns a list of problems; an
  * empty list means the bytes match the intent the signer agreed to.
@@ -241,6 +272,15 @@ export async function verifyPlan(
   }
   if ((await messageHash(transaction)) !== plan.messageHash) {
     problems.push("Message hash mismatch");
+  }
+  const canonical = canonicalProblem(
+    transaction,
+    expectedIntent,
+    inspected.blockhash,
+    plan.memo
+  );
+  if (canonical) {
+    problems.push(canonical);
   }
   return problems;
 }

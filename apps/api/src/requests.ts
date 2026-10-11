@@ -23,10 +23,32 @@ import { parseTokenAccount } from "./chain";
 import type { Chain } from "./chain";
 import type { Db } from "./db";
 import { conflict, HttpError, notFound } from "./http";
-import { requestHash } from "./operations";
+import { assertPendingVaultCapacity, requestHash } from "./operations";
 import type { Operations, OperationView } from "./operations";
 
 const U64_MAX = 2n ** 64n - 1n;
+
+/** Numeric columns come back as strings; requests may carry leading zeros. */
+const sameNumber = (a: unknown, b: unknown) =>
+  BigInt(String(a)) === BigInt(String(b));
+
+/**
+ * Registration runs before anything lands, so a row may already exist at the address (a retry,
+ * an earlier plan, or an on-chain proposal the worker projected). Reusing it is only safe when
+ * it names the same terms; otherwise the request is rejected and its operation rolled back.
+ */
+function assertSameRegistration(
+  what: string,
+  existing: Record<string, unknown> | undefined,
+  matches: (row: Record<string, unknown>) => boolean
+) {
+  if (!existing || !matches(existing)) {
+    throw conflict(
+      "reference_conflict",
+      `${what} reference or address is already registered with different terms`
+    );
+  }
+}
 const address = z
   .string()
   .refine((v) => isAddress(v), "must be a base58 address");
@@ -255,13 +277,35 @@ export class Requests {
         reference: body.reference,
       },
       async (tx) => {
-        await tx`
+        if (!sameRef) {
+          await assertPendingVaultCapacity(tx, institution.id);
+        }
+        const inserted = await tx`
         INSERT INTO vaults (address, institution_id, vault_ref, vault_id, treasury, mint, token_account,
           treasury_destination, approvers, per_loan_limit, outstanding_limit)
         VALUES (${vault}, ${institution.id}, ${body.reference}, ${vaultId}, ${body.treasury}, ${body.mint},
           ${vaultTokenAccount}, ${body.treasuryDestination}, ${body.approvers}, ${body.perLoanLimit},
           ${body.outstandingLimit})
-        ON CONFLICT DO NOTHING`;
+        ON CONFLICT DO NOTHING RETURNING address`;
+        if (inserted.length === 0) {
+          const [existing] = await tx`
+            SELECT * FROM vaults
+            WHERE address = ${vault} OR (institution_id = ${institution.id} AND vault_ref = ${body.reference})`;
+          assertSameRegistration(
+            "Vault",
+            existing,
+            (row) =>
+              row.address === vault &&
+              row.institution_id === institution.id &&
+              row.vault_ref === body.reference &&
+              row.mint === body.mint &&
+              row.treasury_destination === body.treasuryDestination &&
+              JSON.stringify(row.approvers) ===
+                JSON.stringify(body.approvers) &&
+              sameNumber(row.per_loan_limit, body.perLoanLimit) &&
+              sameNumber(row.outstanding_limit, body.outstandingLimit)
+          );
+        }
       }
     );
   }
@@ -364,12 +408,29 @@ export class Requests {
         reference: body.reference,
       },
       async (tx) => {
-        await tx`
+        const inserted = await tx`
         INSERT INTO loans (address, vault, loan_ref, loan_id, borrower, destination, principal,
           term_rate_bps, term_seconds, offer_expiry)
         VALUES (${loan}, ${vault}, ${body.reference}, ${loanId}, ${body.borrower}, ${body.destination},
           ${body.principal}, ${body.termRateBps}, ${body.termSeconds}, ${body.offerExpiry})
-        ON CONFLICT DO NOTHING`;
+        ON CONFLICT DO NOTHING RETURNING address`;
+        if (inserted.length === 0) {
+          const [existing] =
+            await tx`SELECT * FROM loans WHERE address = ${loan}`;
+          assertSameRegistration(
+            "Loan",
+            existing,
+            (row) =>
+              row.vault === vault &&
+              row.loan_ref === body.reference &&
+              row.borrower === body.borrower &&
+              row.destination === body.destination &&
+              sameNumber(row.principal, body.principal) &&
+              sameNumber(row.term_rate_bps, body.termRateBps) &&
+              sameNumber(row.term_seconds, body.termSeconds) &&
+              sameNumber(row.offer_expiry, body.offerExpiry)
+          );
+        }
       }
     );
   }
@@ -519,10 +580,22 @@ export class Requests {
         reference: body.reference,
       },
       async (tx) => {
-        await tx`
+        const inserted = await tx`
         INSERT INTO withdrawals (address, vault, withdrawal_ref, withdrawal_id, amount)
         VALUES (${withdrawal}, ${vault}, ${body.reference}, ${withdrawalId}, ${body.amount})
-        ON CONFLICT DO NOTHING`;
+        ON CONFLICT DO NOTHING RETURNING address`;
+        if (inserted.length === 0) {
+          const [existing] =
+            await tx`SELECT * FROM withdrawals WHERE address = ${withdrawal}`;
+          assertSameRegistration(
+            "Withdrawal",
+            existing,
+            (row) =>
+              row.vault === vault &&
+              row.withdrawal_ref === body.reference &&
+              sameNumber(row.amount, body.amount)
+          );
+        }
       }
     );
   }

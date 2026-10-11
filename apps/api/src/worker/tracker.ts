@@ -119,6 +119,10 @@ export class Tracker {
           await this.recordProgress(attempt, status);
           continue;
         }
+        if (attempt.status !== "live") {
+          // oxlint-disable-next-line no-await-in-loop -- attempts are driven one at a time; each step is a persisted state transition
+          await this.revertDropped(attempt);
+        }
         // oxlint-disable-next-line no-await-in-loop -- fetched lazily, at most once per tick, only when an attempt needs it
         finalizedHeight ??= await this.chain.getBlockHeight("finalized");
         // oxlint-disable-next-line no-await-in-loop -- attempts are driven one at a time; each step is a persisted state transition
@@ -140,11 +144,40 @@ export class Tracker {
       WHERE id = ${attempt.id} AND lease_epoch = ${attempt.lease_epoch}`;
   }
 
+  /**
+   * A landing seen below finalized whose signature the node no longer reports (its fork was
+   * abandoned) is live again: it must be rebroadcast, or expired with proof, like any live attempt.
+   */
+  private async revertDropped(attempt: ClaimedAttempt) {
+    await this.db.begin(async (sql) => {
+      const reverted = await sql`
+        UPDATE tx_attempts SET status = 'live', confirmation = NULL, slot = NULL, err = NULL,
+          updated_at = now()
+        WHERE id = ${attempt.id} AND lease_epoch = ${attempt.lease_epoch}
+          AND status IN ('landed_ok', 'landed_err') AND confirmation IS DISTINCT FROM 'finalized'
+          AND signed_tx IS NOT NULL
+        RETURNING id`;
+      if (reverted.length > 0) {
+        attempt.status = "live";
+        await sql`
+          UPDATE operations SET status = 'submitted', updated_at = now()
+          WHERE id = ${attempt.operation_id} AND status = 'confirmed'`;
+      }
+    });
+  }
+
   private async rebroadcast(attempt: ClaimedAttempt) {
     const due =
       !attempt.last_sent_at ||
       Date.now() - attempt.last_sent_at.getTime() >= REBROADCAST_MS;
-    if (due && attempt.status === "live" && attempt.signed_tx) {
+    // An operation already applied by another transaction is watched but never resent.
+    const [operation] = due
+      ? await this
+          .db`SELECT status FROM operations WHERE id = ${attempt.operation_id}`
+      : [];
+    const inFlight =
+      operation?.status === "submitted" || operation?.status === "confirmed";
+    if (due && inFlight && attempt.status === "live" && attempt.signed_tx) {
       try {
         await this.chain.sendTransaction(
           bytesToBase64(new Uint8Array(attempt.signed_tx))
@@ -222,11 +255,20 @@ export class Tracker {
       SELECT a.id, a.operation_id, o.vault FROM tx_attempts a JOIN operations o ON o.id = a.operation_id
       WHERE a.status = 'awaiting_signatures' AND a.last_valid_block_height < ${height.toString()}
       LIMIT 50`) as { id: string; operation_id: string; vault: string }[];
+    // A vault that cannot be indexed only holds back its own attempts, never another vault's.
+    const failed = new Set<string>();
     for (const vault of new Set(stale.map((s) => s.vault))) {
-      // oxlint-disable-next-line no-await-in-loop -- vaults are indexed one at a time, and all before any attempt expires
-      await this.indexer.syncVault(vault);
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- vaults are indexed one at a time, and all before any attempt expires
+        await this.indexer.syncVault(vault);
+      } catch {
+        failed.add(vault);
+      }
     }
     for (const attempt of stale) {
+      if (failed.has(attempt.vault)) {
+        continue;
+      }
       // oxlint-disable-next-line no-await-in-loop -- each attempt expires in its own transaction, in order
       await this.db.begin(async (sql) => {
         const expired = await sql`

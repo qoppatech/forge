@@ -49,14 +49,16 @@ export function errorResponse(error: unknown): Response {
   return json({ error: { code: "internal", message: "Internal error" } }, 500);
 }
 
-const MAX_BODY_BYTES = 64 * 1024;
+/** Also passed to Bun.serve as `maxRequestBodySize`, so larger bodies are refused before they
+ *  are buffered; the check below keeps the limit in bytes for any other entry point. */
+export const MAX_BODY_BYTES = 64 * 1024;
 
 export async function readBody<T extends z.ZodType>(
   request: Request,
   schema: T
 ): Promise<z.infer<T>> {
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) {
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
     throw new HttpError(413, "too_large", "Request body too large");
   }
   let parsed: unknown;

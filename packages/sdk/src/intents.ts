@@ -389,9 +389,12 @@ export interface RawInstruction {
 /**
  * Decodes a Forge instruction back into its intent. Returns undefined for other programs and
  * throws for Forge data that matches no IDL instruction or uses a non-canonical fixed account.
+ * `exact: false` mirrors the program, which ignores bytes after the arguments; use it for
+ * executed instructions read from chain, and keep the strict default for plan review.
  */
 export function decodeForgeInstruction(
-  instruction: RawInstruction
+  instruction: RawInstruction,
+  { exact = true }: { exact?: boolean } = {}
 ): ForgeIntent | undefined {
   if (instruction.programAddress !== FORGE_PROGRAM_ADDRESS) {
     return undefined;
@@ -402,9 +405,7 @@ export function decodeForgeInstruction(
       ix.discriminator,
       ix.args,
       instruction.data,
-      {
-        exact: true,
-      }
+      { exact }
     );
     if (!args) {
       continue;

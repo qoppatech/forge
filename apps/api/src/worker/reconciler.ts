@@ -38,6 +38,8 @@ interface VaultRow {
 interface MatchedAttempt {
   id: string;
   operation_id: string;
+  signature: string | null;
+  message_hash: string;
 }
 
 /** State shared by the steps that record one successful transaction. */
@@ -79,16 +81,21 @@ function forgeInstructions(tx: ChainTransaction): DecodedInstruction[] {
       continue;
     }
     try {
-      const intent = decodeForgeInstruction({
-        accounts: ix.accounts.map((address) => ({ address })),
-        data: ix.data,
-        programAddress: ix.programAddress,
-      });
+      // The program ignores bytes after the arguments, so executed data is decoded the same way.
+      const intent = decodeForgeInstruction(
+        {
+          accounts: ix.accounts.map((address) => ({ address })),
+          data: ix.data,
+          programAddress: ix.programAddress,
+        },
+        { exact: false }
+      );
       if (intent) {
         decoded.push({ index: ix.index, innerIndex: ix.innerIndex, intent });
       }
     } catch {
-      // Malformed Forge data cannot have executed successfully; failures are still recorded.
+      // Data the program would reject (unknown discriminator, missing accounts) cannot have
+      // executed successfully; failures are still recorded.
     }
   }
   return decoded.toSorted(
@@ -161,7 +168,10 @@ async function projectSubject(
           ${loan.fixedInterest.toString()}, ${loan.fixedPayoff.toString()}, ${loan.approvals},
           ${loan.state}, ${loan.proposedAt.toString()}, ${loan.disbursedAt.toString()},
           ${loan.repaidAt.toString()}, ${slot.toString()})
-        ON CONFLICT (address) DO UPDATE SET onchain = true, fixed_interest = EXCLUDED.fixed_interest,
+        ON CONFLICT (address) DO UPDATE SET onchain = true, borrower = EXCLUDED.borrower,
+          destination = EXCLUDED.destination, principal = EXCLUDED.principal,
+          term_rate_bps = EXCLUDED.term_rate_bps, term_seconds = EXCLUDED.term_seconds,
+          offer_expiry = EXCLUDED.offer_expiry, fixed_interest = EXCLUDED.fixed_interest,
           fixed_payoff = EXCLUDED.fixed_payoff, approvals = EXCLUDED.approvals, state = EXCLUDED.state,
           proposed_at = EXCLUDED.proposed_at, disbursed_at = EXCLUDED.disbursed_at,
           repaid_at = EXCLUDED.repaid_at, synced_slot = EXCLUDED.synced_slot, updated_at = now()`;
@@ -178,7 +188,8 @@ async function projectSubject(
           ${withdrawal.withdrawalId}, ${withdrawal.amount.toString()}, true, ${withdrawal.approvals},
           ${withdrawal.state}, ${withdrawal.proposedAt.toString()}, ${withdrawal.executedAt.toString()},
           ${slot.toString()})
-        ON CONFLICT (address) DO UPDATE SET onchain = true, approvals = EXCLUDED.approvals,
+        ON CONFLICT (address) DO UPDATE SET onchain = true, amount = EXCLUDED.amount,
+          approvals = EXCLUDED.approvals,
           state = EXCLUDED.state, proposed_at = EXCLUDED.proposed_at,
           executed_at = EXCLUDED.executed_at, synced_slot = EXCLUDED.synced_slot, updated_at = now()`;
   }
@@ -196,7 +207,10 @@ async function projectVault(
   }
   const cash = snapshots.tokenAmounts.get(vault.tokenAccount);
   await sql`
-      UPDATE vaults SET onchain = true, outstanding_principal = ${vault.outstandingPrincipal.toString()},
+      UPDATE vaults SET onchain = true, mint = ${vault.mint}, approvers = ${vault.approvers},
+        treasury_destination = ${vault.treasuryDestination}, per_loan_limit = ${vault.perLoanLimit.toString()},
+        outstanding_limit = ${vault.outstandingLimit.toString()},
+        outstanding_principal = ${vault.outstandingPrincipal.toString()},
         disbursement_paused = ${vault.disbursementPaused}, pause_seq = ${vault.pauseSeq.toString()},
         cash = ${cash === undefined ? null : cash.toString()}, synced_slot = ${slot.toString()},
         updated_at = now()
@@ -244,7 +258,7 @@ export class Reconciler {
     // wallet adding instructions before broadcasting).
     const memo = operationMemo(tx);
     const [matched] = (await this.db`
-      SELECT id, operation_id FROM tx_attempts
+      SELECT id, operation_id, signature, message_hash FROM tx_attempts
       WHERE signature = ${signature} OR message_hash = ${tx.messageHash}
          OR (operation_id = ${memo?.operationId ?? null}::uuid AND attempt_no = ${memo?.attemptNo ?? -1})
       ORDER BY (signature IS NOT DISTINCT FROM ${signature}) DESC LIMIT 1`) as MatchedAttempt[];
@@ -349,12 +363,27 @@ export class Reconciler {
       if (!operation) {
         return "processed";
       }
+      // The memo is public, copyable text: a memo-only match must also be paid by the operation's
+      // fee payer and carry its exact intent before it may fail the operation.
+      const exact =
+        matched.signature === tx.signature ||
+        matched.message_hash === tx.messageHash;
+      const bound =
+        exact ||
+        (tx.feePayer === operation.required_signers[0] &&
+          instructions.some(
+            (i) =>
+              i.innerIndex === -1 && intentsEqual(operation.intent, i.intent)
+          ));
+      if (!bound) {
+        return "processed";
+      }
       const outcome = classifyFailure(operation.intent, error, snapshots);
       await sql`
         UPDATE tx_attempts SET status = 'landed_err', confirmation = 'finalized',
           err = ${toJsonSafe(tx.err)}, slot = ${tx.slot.toString()},
           signature = coalesce(signature, ${tx.signature}), updated_at = now()
-        WHERE id = ${matched.id}`;
+        WHERE id = ${matched.id} AND confirmation IS DISTINCT FROM 'finalized'`;
       const updated = await sql`
         UPDATE operations SET status = ${outcome.status}, status_reason = ${outcome.reason},
           error = ${toJsonSafe(error)}, finalized_slot = ${tx.slot.toString()}, updated_at = now()
@@ -462,6 +491,11 @@ export class Reconciler {
               slot = ${tx.slot.toString()}, signature = coalesce(signature, ${tx.signature}), updated_at = now()
             WHERE operation_id = ${operationId}
               AND (signature = ${tx.signature} OR message_hash = ${tx.messageHash} OR id = ${matched?.id ?? null})`;
+      // Applied by another transaction (e.g. a wallet rebuild): the plan still awaiting signatures
+      // must not be signable any more, or the operation could land twice.
+      await sql`
+            UPDATE tx_attempts SET status = 'expired', updated_at = now()
+            WHERE operation_id = ${operationId} AND status = 'awaiting_signatures'`;
     } else {
       operationId = await this.externalOperation(sql, tx, ix, vault);
     }
@@ -534,7 +568,7 @@ export class Reconciler {
           INSERT INTO exceptions (network, vault, kind, signature, amount, details)
           VALUES (${network}, ${vault.address}, ${kind}, ${tx.signature}, ${amount.toString()},
             ${{ feePayer: tx.feePayer, post: balance.post.toString(), pre: balance.pre.toString() }})
-          ON CONFLICT DO NOTHING RETURNING id`;
+          ON CONFLICT (network, vault, kind, signature) DO NOTHING RETURNING id`;
     if (!exception) {
       return;
     }

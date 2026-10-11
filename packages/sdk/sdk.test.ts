@@ -557,3 +557,100 @@ describe("errors, accounts and views", () => {
     );
   });
 });
+
+describe("untrusted chain data (security audit regressions)", () => {
+  test("operation memos accept only a canonical UUID and a bounded attempt number", () => {
+    const id = crypto.randomUUID();
+    expect(sdk.parseOperationMemo(`forge:op:${id}:2`)).toEqual({
+      attemptNo: 2,
+      operationId: id,
+    });
+    for (const memo of [
+      `forge:op:${"-".repeat(36)}:1`,
+      `forge:op:${"a".repeat(36)}:1`,
+      `forge:op:${id}:0`,
+      `forge:op:${id}:9999999999`,
+      `forge:op:${id.toUpperCase()}:1`,
+    ]) {
+      expect(sdk.parseOperationMemo(memo)).toBeUndefined();
+    }
+  });
+
+  test("executed instructions decode like the program: trailing bytes are ignored only on request", async () => {
+    const { intents } = await sampleIntents();
+    const fund = defined(intents[1]);
+    const ix = sdk.buildForgeInstruction(fund);
+    const padded = {
+      accounts: ix.accounts ?? [],
+      data: new Uint8Array([...(ix.data ?? []), 0xde, 0xad]),
+      programAddress: ix.programAddress,
+    };
+    expect(() => sdk.decodeForgeInstruction(padded)).toThrow(
+      "Trailing bytes after Borsh data"
+    );
+    expect(sdk.decodeForgeInstruction(padded, { exact: false })).toEqual(fund);
+  });
+
+  test("error decoding survives bigint payloads from the RPC", () => {
+    const decoded = sdk.decodeTransactionError({
+      InsufficientFundsForRent: { account_index: 3n },
+    });
+    expect(decoded.category).toBe("unknown");
+    expect(decoded.message).toContain('"3"');
+    expect(
+      sdk.decodeTransactionError({
+        InstructionError: [0, { BorshIoError: 7n }],
+      }).category
+    ).toBe("invalid_accounts");
+  });
+
+  test("a v1 plan with a priority-fee config fails review even when every field matches", async () => {
+    const { intents } = await sampleIntents();
+    const fund = defined(intents[1]) as Sdk.FundVaultIntent;
+    const memo = sdk.operationMemo(crypto.randomUUID(), 1);
+    const {
+      address,
+      compileTransaction,
+      createTransactionMessage,
+      pipe,
+      setTransactionMessageFeePayer,
+      setTransactionMessageLifetimeUsingBlockhash,
+      setTransactionMessagePriorityFeeLamports,
+    } = await import("@solana/kit");
+    const v1 = compileTransaction(
+      pipe(
+        createTransactionMessage({ version: 1 }),
+        (m) => setTransactionMessageFeePayer(address(fund.treasury), m),
+        (m) =>
+          setTransactionMessageLifetimeUsingBlockhash(
+            { blockhash: BLOCKHASH as never, lastValidBlockHeight: 1n },
+            m
+          ),
+        (m) => setTransactionMessagePriorityFeeLamports(5_000_000_000n, m),
+        (m) =>
+          appendTransactionMessageInstruction(
+            {
+              data: new TextEncoder().encode(memo),
+              programAddress: sdk.MEMO_PROGRAM_ADDRESS,
+            },
+            m
+          ),
+        (m) =>
+          appendTransactionMessageInstruction(
+            sdk.buildForgeInstruction(fund),
+            m
+          )
+      ) as never
+    ) as unknown as Transaction;
+    const problems = await sdk.verifyPlan({
+      intent: fund,
+      memo,
+      messageHash: await sdk.messageHash(v1),
+      requiredSigners: sdk.requiredSigners(fund),
+      transaction: sdk.encodeWireTransaction(v1),
+    });
+    expect(problems).toContain(
+      "Message bytes differ from the canonical v0 compilation of the intent"
+    );
+  });
+});
