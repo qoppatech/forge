@@ -366,9 +366,9 @@ export class Requests {
       async (tx) => {
         await tx`
         INSERT INTO loans (address, vault, loan_ref, loan_id, borrower, destination, principal,
-          term_rate_bps, term_seconds, offer_expiry)
+          term_rate_bps, term_seconds, offer_expiry, approvals)
         VALUES (${loan}, ${vault}, ${body.reference}, ${loanId}, ${body.borrower}, ${body.destination},
-          ${body.principal}, ${body.termRateBps}, ${body.termSeconds}, ${body.offerExpiry})
+          ${body.principal}, ${body.termRateBps}, ${body.termSeconds}, ${body.offerExpiry}, ${[false, false]})
         ON CONFLICT DO NOTHING`;
       }
     );
@@ -483,7 +483,8 @@ export class Requests {
   ) {
     await this.ownedVault(institution, vault);
     const account = await this.chainVault(vault);
-    if (!account.approvers.includes(body.approver)) {
+    const index = account.approvers.indexOf(body.approver);
+    if (index === -1) {
       throw new HttpError(
         422,
         "not_an_approver",
@@ -520,8 +521,8 @@ export class Requests {
       },
       async (tx) => {
         await tx`
-        INSERT INTO withdrawals (address, vault, withdrawal_ref, withdrawal_id, amount)
-        VALUES (${withdrawal}, ${vault}, ${body.reference}, ${withdrawalId}, ${body.amount})
+        INSERT INTO withdrawals (address, vault, withdrawal_ref, withdrawal_id, amount, approvals)
+        VALUES (${withdrawal}, ${vault}, ${body.reference}, ${withdrawalId}, ${body.amount}, ${[index === 0, index === 1]})
         ON CONFLICT DO NOTHING`;
       }
     );

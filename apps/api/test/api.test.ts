@@ -202,6 +202,58 @@ describe("API boundary (#4)", () => {
     expect(afterB.body.status).toBe("submitted");
     expect(h.chain.sent.length).toBe(sent + 1);
   });
+
+  test("proposals store the on-chain initial approvals", async () => {
+    const { intent } = await h.createVault();
+    const loan = await h.api("POST", `/v1/vaults/${intent.vault}/loans`, {
+      approver: h.roles.approverA.address,
+      borrower: h.roles.borrower.address,
+      destination: h.accounts.borrowerTokens,
+      offerExpiry: String(Math.floor(Date.now() / 1000) + 3600),
+      principal: "5000000000",
+      reference: "LN-1",
+      termRateBps: 200,
+      termSeconds: "2592000",
+    });
+    expect(loan.status).toBe(201);
+    const loans = await h.api("GET", `/v1/vaults/${intent.vault}/loans`);
+    expect(loans.body[0].approvals).toEqual([false, false]);
+    expect(loans.body[0].onchain).toBe(false);
+    expect(loans.body[0].view.status).toBe("pending");
+
+    // propose_withdrawal records the proposer's approval in the same instruction.
+    const byA = await h.api("POST", `/v1/vaults/${intent.vault}/withdrawals`, {
+      amount: "100",
+      approver: h.roles.approverA.address,
+      reference: "WD-A",
+    });
+    expect(byA.status).toBe(201);
+    const byB = await h.api("POST", `/v1/vaults/${intent.vault}/withdrawals`, {
+      amount: "100",
+      approver: h.roles.approverB.address,
+      reference: "WD-B",
+    });
+    expect(byB.status).toBe(201);
+    const { body: withdrawals } = await h.api(
+      "GET",
+      `/v1/vaults/${intent.vault}/withdrawals`
+    );
+    const approvals = Object.fromEntries(
+      withdrawals.map((w: { withdrawal_ref: string; approvals: boolean[] }) => [
+        w.withdrawal_ref,
+        w.approvals,
+      ])
+    );
+    expect(approvals).toEqual({ "WD-A": [true, false], "WD-B": [false, true] });
+
+    const outsider = await h.api(
+      "POST",
+      `/v1/vaults/${intent.vault}/withdrawals`,
+      { amount: "100", approver: h.roles.borrower.address, reference: "WD-X" }
+    );
+    expect(outsider.status).toBe(422);
+    expect(outsider.body.error.code).toBe("not_an_approver");
+  });
 });
 
 describe("worker lifecycle (#5)", () => {
