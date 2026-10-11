@@ -21,3 +21,11 @@ coverage/
 *.tsbuildinfo
 *.log
 /packages/sdk/src/generated/
+
+# Claude Code: local settings and agent worktrees
+/.claude/settings.local.json
+/.claude/worktrees/
+
+# Generated leftovers of apps/native and apps/web, removed in 7e3715b
+/apps/native/
+/apps/web/
